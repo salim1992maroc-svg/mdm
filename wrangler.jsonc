@@ -5,7 +5,7 @@
   "compatibility_date": "2026-09-16",
   "d1_databases": [
     {
-      "binding": "DB1",
+      "binding": "DB",
       "database_name": "telegram-miniapp-db",
       "database_id": "ada059c9-6956-45fc-8b71-e977f6447460"
     }
