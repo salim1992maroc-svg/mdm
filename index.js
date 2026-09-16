@@ -169,22 +169,46 @@ async function handleApi(request, env) {
     }
 
     if (action === "public_payouts") {
-      const settings = await getSettings(env.DB);
-      if (!settings.payoutProofEnabled) return json({ success: true, payouts: [], enabled: false });
-      const q = await env.DB.prepare(`
-        SELECT amount, method, created_at, firstName, lastName
-        FROM withdrawals w LEFT JOIN users u ON u.id=w.user_id
-        WHERE w.status='Completed'
-        ORDER BY w.id DESC LIMIT 30
-      `).all();
-      const payouts = (q.results || []).map(x => ({
-        amount: Number(x.amount || 0),
-        method: String(x.method || ""),
-        date: String(x.created_at || ""),
-        name: ((x.firstName || "User").slice(0, 1) + "***")
-      }));
-      return json({ success: true, payouts, enabled: true, currency: settings.currency });
-    }
+  const settings = await getSettings(env.DB);
+
+  if (!settings.payoutProofEnabled) {
+    return json({
+      success: true,
+      payouts: [],
+      enabled: false,
+      currency: settings.currency
+    });
+  }
+
+  const q = await env.DB.prepare(`
+    SELECT
+      w.id,
+      w.amount,
+      w.method,
+      w.created_at,
+      u.firstName
+    FROM withdrawals AS w
+    LEFT JOIN users AS u ON u.id = w.user_id
+    WHERE w.status = 'Completed'
+    ORDER BY w.id DESC
+    LIMIT 30
+  `).all();
+
+  const payouts = (q.results || []).map(x => ({
+    id: Number(x.id || 0),
+    amount: Number(x.amount || 0),
+    method: String(x.method || ""),
+    date: String(x.created_at || ""),
+    name: ((String(x.firstName || "User").trim().slice(0, 1) || "U") + "***")
+  }));
+
+  return json({
+    success: true,
+    payouts,
+    enabled: true,
+    currency: settings.currency
+  });
+}
 
     if (action === "add_reward") {
       const auth = await requireUser(env, input);
