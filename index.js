@@ -169,46 +169,51 @@ async function handleApi(request, env) {
     }
 
     if (action === "public_payouts") {
-  const settings = await getSettings(env.DB);
+      const settings = await getSettings(env.DB);
+      if (!settings.payoutProofEnabled) {
+        return json({ success: true, payouts: [], enabled: false, currency: settings.currency });
+      }
+      const q = await env.DB.prepare(`
+        SELECT
+          w.id,
+          w.amount,
+          w.method,
+          w.created_at,
+          u.firstName
+        FROM withdrawals AS w
+        LEFT JOIN users AS u ON u.id = w.user_id
+        WHERE w.status = 'Completed'
+        ORDER BY w.id DESC
+        LIMIT 30
+      `).all();
+      const payouts = (q.results || []).map(x => ({
+        id: Number(x.id || 0),
+        amount: Number(x.amount || 0),
+        method: String(x.method || ""),
+        date: String(x.created_at || ""),
+        name: ((String(x.firstName || "User").trim().slice(0, 1) || "U") + "***")
+      }));
+      return json({ success: true, payouts, enabled: true, currency: settings.currency });
+    }
 
-  if (!settings.payoutProofEnabled) {
-    return json({
-      success: true,
-      payouts: [],
-      enabled: false,
-      currency: settings.currency
-    });
-  }
-
-  const q = await env.DB.prepare(`
-    SELECT
-      w.id,
-      w.amount,
-      w.method,
-      w.created_at,
-      u.firstName
-    FROM withdrawals AS w
-    LEFT JOIN users AS u ON u.id = w.user_id
-    WHERE w.status = 'Completed'
-    ORDER BY w.id DESC
-    LIMIT 30
-  `).all();
-
-  const payouts = (q.results || []).map(x => ({
-    id: Number(x.id || 0),
-    amount: Number(x.amount || 0),
-    method: String(x.method || ""),
-    date: String(x.created_at || ""),
-    name: ((String(x.firstName || "User").trim().slice(0, 1) || "U") + "***")
-  }));
-
-  return json({
-    success: true,
-    payouts,
-    enabled: true,
-    currency: settings.currency
-  });
-}
+    if (action === "start_ad") {
+      const auth = await requireUser(env, input);
+      await env.DB.prepare(`
+        CREATE TABLE IF NOT EXISTS ad_sessions (
+          id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL,
+          created_at INTEGER NOT NULL
+        )
+      `).run();
+      const sessionId = crypto.randomUUID();
+      const createdAt = Date.now();
+      // Keep only the newest pending session for this user.
+      await env.DB.prepare("DELETE FROM ad_sessions WHERE user_id=?").bind(String(auth.user.id)).run();
+      await env.DB.prepare(
+        "INSERT INTO ad_sessions(id,user_id,created_at) VALUES(?,?,?)"
+      ).bind(sessionId, String(auth.user.id), createdAt).run();
+      return json({ success: true, adSession: sessionId });
+    }
 
     if (action === "add_reward") {
       const auth = await requireUser(env, input);
@@ -223,6 +228,26 @@ async function handleApi(request, env) {
         ).bind(amount, amount, today, String(auth.user.id), today).run();
         if (!result.meta.changes) return json({ success: false, message: "Already claimed" }, 400);
       } else if (type === "ad") {
+        const adSession = String(input.adSession || "").trim();
+        if (!adSession || adSession.length > 100) {
+          return json({ success:false, message:"Ad session is required" },400);
+        }
+        await env.DB.prepare(`
+          CREATE TABLE IF NOT EXISTS ad_sessions (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            created_at INTEGER NOT NULL
+          )
+        `).run();
+        // A reward can be redeemed only once for a server-issued session.
+        // Sessions expire after 10 minutes.
+        const cutoff = Date.now() - 10 * 60 * 1000;
+        const consumed = await env.DB.prepare(
+          "DELETE FROM ad_sessions WHERE id=? AND user_id=? AND created_at>=?"
+        ).bind(adSession, String(auth.user.id), cutoff).run();
+        if (!consumed.meta.changes) {
+          return json({ success:false, message:"Invalid or expired ad session" },400);
+        }
         const today = nowDate();
         const amount = Number(settings.adRewardAmount);
         const limit = Math.max(0, Math.floor(Number(settings.dailyAdLimit || 10)));
@@ -442,7 +467,7 @@ function fillMethods(text){const e=$("paymentMethod"),old=e.value;e.innerHTML='<
 function renderHistory(items){const e=$("history");if(!items?.length){e.innerHTML='<p class="muted">No withdrawals yet.</p>';return}e.innerHTML=items.map(w=>'<div class="item"><b>'+money(w.amount)+"</b> "+esc(w.method)+' <span class="tag">'+esc(w.status)+'</span><br><span class="muted">'+esc(w.date||"")+' · '+esc(w.address)+'</span></div>').join("")}
 async function refresh(){apply(await api("sync_user"));await loadProof();if(isAdmin)await refreshAdmin()}
 async function loadProof(){try{const d=await api("public_payouts",{});if(!d.enabled){$("proofList").innerHTML='<p class="muted">Payout proof is currently disabled.</p>';return}if(!d.payouts.length){$("proofList").innerHTML='<p class="muted">No completed payouts yet.</p>';return}$("proofList").innerHTML=d.payouts.map(p=>'<div class="item">✓ <b>'+esc(p.name)+'</b> received <b>'+money(p.amount)+" "+esc(d.currency)+"</b> via "+esc(p.method)+'<br><span class="muted">'+esc(p.date)+'</span></div>').join("")}catch(e){$("proofList").textContent="Unable to load payout proof"}}
-async function watchAd(){const b=$("adBtn");b.disabled=true;try{if(!window.Adsgram)throw new Error("Ads service is unavailable");const id=String(state.settings.adsgramBlockId||"").trim();if(!id)throw new Error("AdsGram Block ID is not configured");const c=window.Adsgram.init({blockId:id});const result=await c.show();if(!result||result.done===false)throw new Error("Ad was not completed");const d=await api("add_reward",{type:"ad"});apply(d);toast("Reward added")}catch(e){toast(e.message)}finally{b.disabled=false}}
+async function watchAd(){const b=$("adBtn");b.disabled=true;try{if(!window.Adsgram)throw new Error("Ads service is unavailable");const id=String(state.settings.adsgramBlockId||"").trim();if(!id)throw new Error("AdsGram Block ID is not configured");const session=await api("start_ad",{});const c=window.Adsgram.init({blockId:id});const result=await c.show();if(!result||result.done!==true)throw new Error("Ad was not completed");const d=await api("add_reward",{type:"ad",adSession:session.adSession});apply(d);toast("Reward added")}catch(e){toast(e.message)}finally{b.disabled=false}}
 $("bonusBtn").onclick=async()=>{try{apply(await api("add_reward",{type:"bonus"}));toast("Daily bonus added")}catch(e){toast(e.message)}};
 $("adBtn").onclick=watchAd;
 $("withdrawBtn").onclick=async()=>{try{const amount=Number($("withdrawAmount").value),method=$("paymentMethod").value,address=$("withdrawAddress").value.trim();apply(await api("withdraw",{amount,method,address}));$("withdrawAmount").value="";$("withdrawAddress").value="";toast("Withdrawal submitted")}catch(e){toast(e.message)}};
