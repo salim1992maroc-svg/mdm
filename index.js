@@ -376,3 +376,5 @@ export default {
     return new Response(HTML, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } });
   }
 };
+
+// Deploy sync 2026-09-16
