@@ -319,8 +319,7 @@ const HTML = `<!DOCTYPE html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0">
 <title>Zelvuno</title>
-<script src="https://telegram.org/js/telegram-web-app.js"></script>
-<script src="https://sad.adsgram.ai/js/sad.min.js"></script>
+<script src="https://telegram.org/js/telegram-web-app.js?63"></script>
 <style>
 body{margin:0;background:#050b14;color:#fff;font-family:Arial,sans-serif}.container{width:92%;max-width:600px;margin:auto}.card{background:#10192b;border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:20px;margin:15px 0}button{border:0;border-radius:12px;padding:12px 18px;cursor:pointer}.primary{background:#00d2ff;color:#001018;font-weight:bold}button:disabled{opacity:.5;cursor:not-allowed}input,select{width:100%;box-sizing:border-box;padding:13px;margin:7px 0;background:#050b14;color:#fff;border:1px solid rgba(255,255,255,.15);border-radius:10px}nav{position:fixed;bottom:0;left:0;right:0;height:70px;background:#10192b;display:flex;justify-content:space-around;align-items:center}nav button{background:none;color:#aaa}nav button.active{color:#00d2ff}section{padding-bottom:90px}.hidden{display:none!important}.toast{position:fixed;top:20px;left:50%;transform:translateX(-50%);background:#17243a;padding:14px 20px;border-radius:12px;z-index:10000;display:none}.admin-user{border-bottom:1px solid rgba(255,255,255,.1);padding:12px 0}.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.muted{color:#9aa6b2;font-size:13px}.danger{background:#ff5c5c;color:#fff}.success{background:#36c98f;color:#001018}.small{padding:8px 10px;font-size:12px}
 #loading-spinner{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#050b14;z-index:9999}.spinner{width:45px;height:45px;border:4px solid rgba(255,255,255,.15);border-top-color:#00d2ff;border-radius:50%;animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
@@ -346,26 +345,107 @@ let state = null;
 
 function toast(message){const el=document.getElementById('toast');el.textContent=message;el.style.display='block';clearTimeout(window.__toast);window.__toast=setTimeout(()=>el.style.display='none',2500)}
 function money(v){return Number(v||0).toFixed(2)}
-function api(action, body={}){return fetch('/api?action='+encodeURIComponent(action),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({...body,initData:telegramInitData})}).then(async r=>{let d={};try{d=await r.json()}catch{}if(!r.ok||d.success===false)throw new Error(d.message||'Request failed');return d})}
+async function api(action, body={}){
+  const controller=new AbortController();
+  const timer=setTimeout(()=>controller.abort(),12000);
+  try{
+    const r=await fetch('/api?action='+encodeURIComponent(action),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({...body,initData:telegramInitData}),signal:controller.signal,cache:'no-store'});
+    let d={};try{d=await r.json()}catch{}
+    if(!r.ok||d.success===false)throw new Error(d.message||('Request failed ('+r.status+')'));
+    return d;
+  }catch(e){
+    if(e.name==='AbortError')throw new Error('Server request timed out');
+    throw e;
+  }finally{clearTimeout(timer)}
+}
 function applyPayload(data){state=data;IS_ADMIN=!!data.isAdmin;const u=data.user,s=data.settings;document.getElementById('headerUserName').textContent=u.firstName+(u.lastName?' '+u.lastName:'');document.getElementById('homeBalance').textContent=money(u.balance);document.getElementById('globalBalance').textContent=money(u.balance);document.getElementById('ads-watched').textContent=u.dailyAdDate===new Date().toISOString().slice(0,10)?u.dailyAdsCount:0;document.getElementById('ad-reward').textContent=money(s.adRewardAmount);document.getElementById('daily-bonus-text').textContent=data.bonusClaimed?'Bonus already claimed today':'Daily bonus: '+money(s.dailyBonusAmount);document.getElementById('claim-daily-bonus').disabled=data.bonusClaimed;populateMethods(s.withdrawMethods);renderHistory(u.withdrawHistory);if(IS_ADMIN){document.getElementById('admin-nav').classList.remove('hidden');renderAdmin(data.all_users||{});fillSettings(s)}}
 function populateMethods(text){const sel=document.getElementById('payment-method'),old=sel.value;sel.innerHTML='<option value="">Select payment method</option>';String(text||'').split(',').forEach(x=>{const [name,min]=x.split(':');if(!name)return;const o=document.createElement('option');o.value=name.trim();o.textContent=name.trim()+' (min '+Number(min||0)+')';sel.appendChild(o)});if(old)sel.value=old}
 function renderHistory(items){const el=document.getElementById('history-list');if(!items?.length){el.innerHTML='<p class="muted">No withdrawals yet.</p>';return}el.innerHTML=items.map(x=>'<div class="admin-user"><b>'+escapeHtml(x.method)+'</b> — '+money(x.amount)+'<br><span class="muted">'+escapeHtml(x.status)+' · '+escapeHtml(x.date||'')+'</span><br><span class="muted">'+escapeHtml(x.address)+'</span></div>').join('')}
-function renderAdmin(users){const el=document.getElementById('admin-users');const ids=Object.keys(users);if(!ids.length){el.innerHTML='<p class="muted">No users.</p>';return}el.innerHTML=ids.map(id=>{const u=users[id];const rows=(u.withdrawHistory||[]).map(w=>'<div class="admin-user"><b>'+money(w.amount)+' '+escapeHtml(w.method)+'</b> — '+escapeHtml(w.status)+'<br><span class="muted">'+escapeHtml(w.address)+'</span><br>'+(w.status==='Pending'?'<button class="small success" onclick="setWithdrawal(\\''+escapeAttr(id)+'\\','+Number(w.id)+',\\'Completed\\')">Complete</button> <button class="small danger" onclick="setWithdrawal(\\''+escapeAttr(id)+'\\','+Number(w.id)+',\\'Cancelled\\')">Cancel</button>':'')+'</div>').join('');return '<div class="admin-user"><b>'+escapeHtml(u.firstName+' '+u.lastName)+'</b><br><span class="muted">@'+escapeHtml(u.username||'no_username')+' · ID '+escapeHtml(id)+'</span><p>Balance: '+money(u.balance)+' <button class="small" onclick="editBalance(\\''+escapeAttr(id)+'\\')">Edit</button></p>'+rows+'</div>'}).join('')}
+function renderAdmin(users){
+  const el=document.getElementById('admin-users');
+  const ids=Object.keys(users||{});
+  if(!ids.length){el.innerHTML='<p class="muted">No users.</p>';return}
+  el.innerHTML=ids.map(id=>{
+    const u=users[id];
+    const rows=(u.withdrawHistory||[]).map(w=>{
+      const buttons=w.status==='Pending'
+        ? '<button class="small success" data-action="withdraw" data-user="'+escapeHtml(id)+'" data-id="'+Number(w.id)+'" data-status="Completed">Complete</button> <button class="small danger" data-action="withdraw" data-user="'+escapeHtml(id)+'" data-id="'+Number(w.id)+'" data-status="Cancelled">Cancel</button>'
+        : '';
+      return '<div class="admin-user"><b>'+money(w.amount)+' '+escapeHtml(w.method)+'</b> — '+escapeHtml(w.status)+'<br><span class="muted">'+escapeHtml(w.address)+'</span><br>'+buttons+'</div>';
+    }).join('');
+    return '<div class="admin-user"><b>'+escapeHtml((u.firstName||'')+' '+(u.lastName||''))+'</b><br><span class="muted">@'+escapeHtml(u.username||'no_username')+' · ID '+escapeHtml(id)+'</span><p>Balance: '+money(u.balance)+' <button class="small" data-action="balance" data-user="'+escapeHtml(id)+'">Edit</button></p>'+rows+'</div>';
+  }).join('');
+}
+
 function escapeHtml(s){return String(s??'').replace(/[&<>'\"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','\"':'&quot;'}[c]))}
 function escapeAttr(s){return String(s??'').replace(/\\/g,'\\\\').replace(/'/g,"\\'")}
 async function refresh(){const d=await api('sync_user');applyPayload(d)}
 async function setWithdrawal(user,id,status){try{const d=await api('update_withdraw_status',{target_user:user,index:id,status});await refresh();toast(status==='Completed'?'Withdrawal completed':'Withdrawal cancelled')}catch(e){toast(e.message)}}
 async function editBalance(user){const value=prompt('New balance');if(value===null)return;try{await api('edit_balance',{target_user:user,new_balance:Number(value)});await refresh();toast('Balance updated')}catch(e){toast(e.message)}}
 function fillSettings(s){document.getElementById('set-currency').value=s.currency;document.getElementById('set-bonus').value=s.dailyBonusAmount;document.getElementById('set-ad-reward').value=s.adRewardAmount;document.getElementById('set-ad-limit').value=s.dailyAdLimit;document.getElementById('set-withdraw-methods').value=s.withdrawMethods;document.getElementById('set-adsgram-block').value=s.adsgramBlockId}
-async function watchAd(){const btn=document.getElementById('show-ad');btn.disabled=true;try{if(!window.Adsgram)throw new Error('Adsgram is not loaded');const blockId=String(state.settings.adsgramBlockId||'');if(!blockId)throw new Error('Adsgram Block ID is not configured');const controller=window.Adsgram.init({blockId});await controller.show();const d=await api('add_reward',{type:'ad'});applyPayload(d);toast('Ad reward added')}catch(e){toast(e.message)}finally{btn.disabled=false}}
+function loadAdsgram(){
+  return new Promise((resolve,reject)=>{
+    if(window.Adsgram){resolve();return}
+    const existing=document.querySelector('script[data-adsgram]');
+    if(existing){existing.addEventListener('load',()=>resolve(),{once:true});existing.addEventListener('error',()=>reject(new Error('Adsgram failed to load')),{once:true});return}
+    const script=document.createElement('script');
+    script.src='https://sad.adsgram.ai/js/sad.min.js';
+    script.async=true;
+    script.dataset.adsgram='1';
+    script.onload=()=>resolve();
+    script.onerror=()=>reject(new Error('Adsgram failed to load'));
+    document.head.appendChild(script);
+  });
+}
+async function watchAd(){
+  const btn=document.getElementById('show-ad');
+  btn.disabled=true;
+  try{
+    if(!state)throw new Error('App is not ready');
+    const blockId=String(state.settings.adsgramBlockId||'');
+    if(!blockId)throw new Error('Adsgram Block ID is not configured');
+    await loadAdsgram();
+    const controller=window.Adsgram.init({blockId});
+    const result=await controller.show();
+    if(result && result.done===false)throw new Error('Ad was not completed');
+    const d=await api('add_reward',{type:'ad'});
+    applyPayload(d);
+    toast('Ad reward added');
+  }catch(e){toast(e.message||'Ad error')}
+  finally{btn.disabled=false}
+}
+
 
 document.getElementById('claim-daily-bonus').onclick=async()=>{try{const d=await api('add_reward',{type:'bonus'});applyPayload(d);toast('Bonus claimed')}catch(e){toast(e.message)}};
 document.getElementById('show-ad').onclick=watchAd;
 document.getElementById('submitWithdrawBtn').onclick=async()=>{try{const amount=Number(document.getElementById('withdraw-amount').value),method=document.getElementById('payment-method').value,address=document.getElementById('withdraw-address').value.trim();const d=await api('withdraw',{amount,method,address});applyPayload(d);document.getElementById('withdraw-form').reset();toast('Withdrawal submitted')}catch(e){toast(e.message)}};
 document.getElementById('save-settings').onclick=async()=>{try{const settings={currency:document.getElementById('set-currency').value,dailyBonusAmount:Number(document.getElementById('set-bonus').value),adRewardAmount:Number(document.getElementById('set-ad-reward').value),dailyAdLimit:Number(document.getElementById('set-ad-limit').value),withdrawMethods:document.getElementById('set-withdraw-methods').value,adsgramBlockId:document.getElementById('set-adsgram-block').value};const d=await api('update_settings',{settings});state.settings=d.settings;applyPayload({...state,settings:d.settings});toast('Settings saved')}catch(e){toast(e.message)}};
+document.getElementById('admin-users').addEventListener('click',async(e)=>{
+  const btn=e.target.closest('button[data-action]');
+  if(!btn)return;
+  const action=btn.dataset.action;
+  if(action==='withdraw'){await setWithdrawal(btn.dataset.user,Number(btn.dataset.id),btn.dataset.status)}
+  if(action==='balance'){await editBalance(btn.dataset.user)}
+});
 document.querySelectorAll('nav button[data-section]').forEach(b=>b.onclick=()=>{if(b.classList.contains('hidden'))return;document.querySelectorAll('section').forEach(s=>s.classList.add('hidden'));document.getElementById(b.dataset.section).classList.remove('hidden');document.querySelectorAll('nav button').forEach(x=>x.classList.remove('active'));b.classList.add('active')});
 
-(async()=>{try{if(!tg)throw new Error('Telegram WebApp is not available');tg.ready();tg.expand();telegramInitData=tg.initData||'';if(!telegramInitData)throw new Error('Open this app from Telegram');await refresh()}catch(e){toast(e.message);document.getElementById('headerUserName').textContent=e.message}finally{document.getElementById('loading-spinner').style.display='none'}})();
+(async()=>{
+  const spinner=document.getElementById('loading-spinner');
+  try{
+    if(!tg)throw new Error('Telegram WebApp is not available');
+    tg.ready();
+    tg.expand();
+    telegramInitData=tg.initData||'';
+    if(!telegramInitData)throw new Error('Open this app from Telegram');
+    await refresh();
+  }catch(e){
+    const message=e.message||'Unable to load the app';
+    toast(message);
+    document.getElementById('headerUserName').textContent=message;
+  }finally{
+    spinner.style.display='none';
+  }
+})();
 </script>
 </body></html>`;
 
@@ -376,5 +456,3 @@ export default {
     return new Response(HTML, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } });
   }
 };
-
-// Deploy sync 2026-09-16
