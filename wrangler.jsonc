@@ -1,7 +1,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "mdm",
-  "main": "src/index.js",
+  "main": "index.js",
   "compatibility_date": "2026-09-16",
   "d1_databases": [
     {
