@@ -162,6 +162,70 @@ async function sendTelegram(env, text) {
   });
 }
 
+
+
+async function telegramApi(env, method, payload) {
+  if (!env.BOT_TOKEN) throw new Error("BOT_TOKEN is not configured");
+  const res = await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/${method}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+  const data = await res.json().catch(() => null);
+  if (!res.ok || !data?.ok) {
+    throw new Error(data?.description || `Telegram API error: ${res.status}`);
+  }
+  return data.result;
+}
+
+async function handleTelegramWebhook(request, env) {
+  if (request.method !== "POST") return new Response("OK", { status: 200 });
+
+  const configuredSecret = String(env.WEBHOOK_SECRET || "");
+  if (configuredSecret) {
+    const receivedSecret = request.headers.get("X-Telegram-Bot-Api-Secret-Token") || "";
+    if (receivedSecret !== configuredSecret) return new Response("Unauthorized", { status: 401 });
+  }
+
+  let update;
+  try {
+    update = await request.json();
+  } catch {
+    return new Response("Bad Request", { status: 400 });
+  }
+
+  const message = update?.message;
+  if (!message?.chat?.id) return new Response("OK", { status: 200 });
+
+  const chatId = message.chat.id;
+  const text = String(message.text || "").trim();
+  const firstName = message.from?.first_name || "there";
+
+  if (text === "/start" || text.startsWith("/start ")) {
+    const appUrl = "https://mdm.malakmalki125.workers.dev";
+    await telegramApi(env, "sendMessage", {
+      chat_id: chatId,
+      text: `Welcome ${firstName} 👋\n\nOpen Zelvuno to earn rewards, claim your daily bonus, watch ads and manage withdrawals.`,
+      reply_markup: {
+        inline_keyboard: [[
+          { text: "🚀 Open Zelvuno", web_app: { url: appUrl } }
+        ]]
+      }
+    });
+    return new Response("OK", { status: 200 });
+  }
+
+  if (text === "/help") {
+    await telegramApi(env, "sendMessage", {
+      chat_id: chatId,
+      text: "Use /start to open Zelvuno."
+    });
+    return new Response("OK", { status: 200 });
+  }
+
+  return new Response("OK", { status: 200 });
+}
+
 async function handleApi(request, env) {
   if (!env.DB) return json({ success: false, message: "D1 database binding DB is missing" }, 500);
   const action = new URL(request.url).searchParams.get("action") || "";
@@ -338,13 +402,32 @@ body{margin:0;background:#050b14;color:#fff;font-family:Arial,sans-serif}.contai
 </div>
 <nav><button data-section="home" class="active">Home</button><button data-section="withdraw">Withdraw</button><button id="admin-nav" data-section="admin" class="hidden">Admin</button></nav>
 <script>
-const tg = window.Telegram?.WebApp;
+let tg = null;
 let IS_ADMIN = false;
 let telegramInitData = "";
 let state = null;
 
 function toast(message){const el=document.getElementById('toast');el.textContent=message;el.style.display='block';clearTimeout(window.__toast);window.__toast=setTimeout(()=>el.style.display='none',2500)}
 function money(v){return Number(v||0).toFixed(2)}
+function loadTelegramWebApp(){
+  return new Promise((resolve,reject)=>{
+    if(window.Telegram?.WebApp){tg=window.Telegram.WebApp;resolve();return}
+    const script=document.createElement('script');
+    script.src='https://telegram.org/js/telegram-web-app.js';
+    script.async=true;
+    const timer=setTimeout(()=>reject(new Error('Telegram SDK load timed out. Open the app from Telegram.')),8000);
+    script.onload=()=>{
+      clearTimeout(timer);
+      if(window.Telegram?.WebApp){tg=window.Telegram.WebApp;resolve();}
+      else reject(new Error('Telegram WebApp is unavailable.'));
+    };
+    script.onerror=()=>{
+      clearTimeout(timer);
+      reject(new Error('Could not load Telegram SDK. Open the app from Telegram.'));
+    };
+    document.head.appendChild(script);
+  });
+}
 async function api(action, body={}){
   const controller=new AbortController();
   const timer=setTimeout(()=>controller.abort(),12000);
@@ -432,6 +515,7 @@ document.querySelectorAll('nav button[data-section]').forEach(b=>b.onclick=()=>{
 (async()=>{
   const spinner=document.getElementById('loading-spinner');
   try{
+    await loadTelegramWebApp();
     if(!tg)throw new Error('Telegram WebApp is not available');
     tg.ready();
     tg.expand();
@@ -452,6 +536,7 @@ document.querySelectorAll('nav button[data-section]').forEach(b=>b.onclick=()=>{
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+    if (url.pathname === "/telegram") return handleTelegramWebhook(request, env);
     if (url.pathname === "/api") return handleApi(request, env);
     return new Response(HTML, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } });
   }
