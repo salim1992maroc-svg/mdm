@@ -237,60 +237,203 @@ async function handleApi(request, env) {
       const auth = await requireUser(env, input);
       const settings = await getSettings(env.DB);
       const gameSession = String(input.gameSession || "").trim();
-      const adSession = String(input.adSession || "").trim();
       const pairs = Number(input.pairs || 0);
       const moves = Number(input.moves || 0);
-      if (!gameSession || gameSession.length > 100 || !adSession || adSession.length > 100 || pairs !== 6 || !Number.isInteger(moves) || moves < 6 || moves > 500) {
-        return json({ success:false, message:"Invalid game completion" },400);
+      if (!gameSession || gameSession.length > 100 || pairs !== 6 || !Number.isInteger(moves) || moves < 6 || moves > 500) {
+        return json({success:false, message:"Invalid game completion"},400);
       }
-      await env.DB.prepare(`
-        CREATE TABLE IF NOT EXISTS game_sessions (
-          id TEXT PRIMARY KEY,
-          user_id TEXT NOT NULL,
-          created_at INTEGER NOT NULL
-        )
-      `).run();
-      await env.DB.prepare(`
-        CREATE TABLE IF NOT EXISTS ad_sessions (
-          id TEXT PRIMARY KEY,
-          user_id TEXT NOT NULL,
-          created_at INTEGER NOT NULL
-        )
-      `).run();
+      await env.DB.batch([
+        env.DB.prepare(`
+          CREATE TABLE IF NOT EXISTS game_sessions (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            created_at INTEGER NOT NULL
+          )
+        `),
+        env.DB.prepare(`
+          CREATE TABLE IF NOT EXISTS game_bonus_sessions (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            game_session_id TEXT NOT NULL UNIQUE,
+            amount REAL NOT NULL,
+            created_at INTEGER NOT NULL
+          )
+        `)
+      ]);
       const cutoff = Date.now() - 30 * 60 * 1000;
-      const adCutoff = Date.now() - 10 * 60 * 1000;
       const amount = Number(settings.gameRewardAmount);
       if (!Number.isFinite(amount) || amount < 0 || amount > 1000000) {
-        return json({ success:false, message:"Invalid game reward setting" },400);
+        return json({success:false, message:"Invalid game reward setting"},400);
       }
-      const limit = Math.max(0, Math.floor(Number(settings.dailyAdLimit || 10)));
+
+      // A completed game pays the base reward immediately. The one-time
+      // bonus session is created in the same D1 transaction so a game cannot
+      // be claimed twice. The X2 button later adds the second half after the ad.
+      const bonusSession = crypto.randomUUID();
+      let batchResult;
+      try {
+        batchResult = await env.DB.batch([
+          env.DB.prepare(`
+            INSERT INTO game_bonus_sessions(id,user_id,game_session_id,amount,created_at)
+            SELECT ?,?,?,?,?
+            WHERE EXISTS (
+              SELECT 1 FROM game_sessions
+              WHERE id=? AND user_id=? AND created_at>=?
+            )
+          `).bind(
+            bonusSession, String(auth.user.id), gameSession, amount, Date.now(),
+            gameSession, String(auth.user.id), cutoff
+          ),
+          env.DB.prepare(`
+            UPDATE users
+            SET balance=balance+?, lifetimeEarned=lifetimeEarned+?
+            WHERE id=?
+              AND EXISTS (
+                SELECT 1 FROM game_bonus_sessions
+                WHERE id=? AND user_id=? AND game_session_id=?
+              )
+          `).bind(
+            amount, amount, String(auth.user.id),
+            bonusSession, String(auth.user.id), gameSession
+          ),
+          env.DB.prepare(
+            "DELETE FROM game_sessions WHERE id=? AND user_id=? AND created_at>=?"
+          ).bind(gameSession, String(auth.user.id), cutoff)
+        ]);
+      } catch (err) {
+        return json({success:false, message:"Game reward could not be recorded. Please start a new game."},500);
+      }
+
+      const inserted = Number(batchResult?.[0]?.meta?.changes || 0);
+      const credited = Number(batchResult?.[1]?.meta?.changes || 0);
+      if (inserted !== 1 || credited !== 1) {
+        // Clean up only this request's bonus row. A successful concurrent
+        // claim uses a different row and is left untouched.
+        await env.DB.prepare("DELETE FROM game_bonus_sessions WHERE id=? AND user_id=?")
+          .bind(bonusSession, String(auth.user.id)).run();
+        return json({success:false, message:"Game already claimed or expired. Start a new game."},400);
+      }
+
+      const row = await env.DB.prepare("SELECT * FROM users WHERE id=?").bind(String(auth.user.id)).first();
+      return json({
+        success:true,
+        gameReward:amount,
+        gameBonusSession:bonusSession,
+        ...(await userPayload(env.DB,row,settings))
+      });
+    }
+
+    if (action === "claim_game_x2") {
+      const auth = await requireUser(env, input);
+      const settings = await getSettings(env.DB);
+      const bonusSession = String(input.gameBonusSession || "").trim();
+      const adSession = String(input.adSession || "").trim();
+      if (!bonusSession || bonusSession.length > 100 || !adSession || adSession.length > 100) {
+        return json({success:false,message:"Invalid X2 bonus request"},400);
+      }
+      await env.DB.batch([
+        env.DB.prepare(`
+          CREATE TABLE IF NOT EXISTS ad_sessions (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            created_at INTEGER NOT NULL
+          )
+        `),
+        env.DB.prepare(`
+          CREATE TABLE IF NOT EXISTS game_bonus_sessions (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            game_session_id TEXT NOT NULL UNIQUE,
+            amount REAL NOT NULL,
+            created_at INTEGER NOT NULL,
+            claimed_at INTEGER
+          )
+        `)
+      ]);
+      // Older deployments may already have game_bonus_sessions without claimed_at.
+      try { await env.DB.prepare("ALTER TABLE game_bonus_sessions ADD COLUMN claimed_at INTEGER").run(); } catch {}
+      const adCutoff = Date.now() - 10 * 60 * 1000;
       const today = nowDate();
+      const limit = Math.max(0, Math.floor(Number(settings.dailyAdLimit || 10)));
       if (limit < 1) return json({success:false,message:"Ads are temporarily unavailable"},400);
       const currentUser = await env.DB.prepare(
         "SELECT daily_ad_date,daily_ads_count FROM users WHERE id=?"
       ).bind(String(auth.user.id)).first();
       const alreadyUsed = currentUser && String(currentUser.daily_ad_date || "") === today
-        ? Number(currentUser.daily_ads_count || 0)
-        : 0;
+        ? Number(currentUser.daily_ads_count || 0) : 0;
       if (alreadyUsed >= limit) return json({success:false,message:"Daily ad limit reached"},400);
-      const consumedAd = await env.DB.prepare(
-        "DELETE FROM ad_sessions WHERE id=? AND user_id=? AND created_at>=?"
-      ).bind(adSession, String(auth.user.id), adCutoff).run();
-      if (!consumedAd.meta.changes) return json({success:false,message:"Invalid or expired ad session"},400);
-      const consumed = await env.DB.prepare(
-        "DELETE FROM game_sessions WHERE id=? AND user_id=? AND created_at>=?"
-      ).bind(gameSession, String(auth.user.id), cutoff).run();
-      if (!consumed.meta.changes) {
-        return json({ success:false, message:"Invalid or expired game session" },400);
+
+      const row = await env.DB.prepare(
+        "SELECT amount FROM game_bonus_sessions WHERE id=? AND user_id=? AND claimed_at IS NULL"
+      ).bind(bonusSession, String(auth.user.id)).first();
+      if (!row) return json({success:false,message:"X2 bonus is no longer available"},400);
+      const amount = Number(row.amount);
+      if (!Number.isFinite(amount) || amount < 0 || amount > 1000000) {
+        return json({success:false,message:"Invalid game reward setting"},400);
       }
-      const result = await env.DB.prepare(`
-        UPDATE users SET balance=balance+?, lifetimeEarned=lifetimeEarned+?, adsWatched=adsWatched+1,
-          daily_ad_date=?, daily_ads_count=CASE WHEN daily_ad_date=? THEN daily_ads_count+1 ELSE 1 END
-        WHERE id=? AND (daily_ad_date<>? OR daily_ad_date IS NULL OR daily_ads_count<?)
-      `).bind(amount * 2, amount * 2, today, today, String(auth.user.id), today, limit).run();
-      if (!result.meta.changes) return json({ success:false, message:"Daily ad limit reached" },400);
-      const row = await env.DB.prepare("SELECT * FROM users WHERE id=?").bind(String(auth.user.id)).first();
-      return json({ success:true, gameReward:amount * 2, ...(await userPayload(env.DB,row,settings)) });
+
+      // First atomically mark the ad session as consumed AND the X2 session as
+      // claimed. The user balance update only proceeds when both one-time rows
+      // were successfully claimed. D1 batch is transactional. citeturn0search0
+      let batchResult;
+      try {
+        batchResult = await env.DB.batch([
+          env.DB.prepare(`
+            UPDATE ad_sessions
+            SET id=id
+            WHERE id=? AND user_id=? AND created_at>=?
+              AND EXISTS (
+                SELECT 1 FROM game_bonus_sessions
+                WHERE id=? AND user_id=? AND claimed_at IS NULL
+              )
+          `).bind(adSession, String(auth.user.id), adCutoff, bonusSession, String(auth.user.id)),
+          env.DB.prepare(`
+            UPDATE game_bonus_sessions
+            SET claimed_at=?
+            WHERE id=? AND user_id=? AND claimed_at IS NULL
+              AND EXISTS (
+                SELECT 1 FROM ad_sessions
+                WHERE id=? AND user_id=? AND created_at>=?
+              )
+          `).bind(Date.now(), bonusSession, String(auth.user.id), adSession, String(auth.user.id), adCutoff),
+          env.DB.prepare(`
+            UPDATE users
+            SET balance=balance+?, lifetimeEarned=lifetimeEarned+?, adsWatched=adsWatched+1,
+                daily_ad_date=?,
+                daily_ads_count=CASE WHEN daily_ad_date=? THEN daily_ads_count+1 ELSE 1 END
+            WHERE id=?
+              AND (daily_ad_date<>? OR daily_ad_date IS NULL OR daily_ads_count<?)
+              AND EXISTS (
+                SELECT 1 FROM game_bonus_sessions
+                WHERE id=? AND user_id=? AND claimed_at IS NOT NULL
+              )
+          `).bind(
+            amount, amount, today, today, String(auth.user.id), today, limit,
+            bonusSession, String(auth.user.id)
+          )
+        ]);
+      } catch (err) {
+        return json({success:false,message:"X2 bonus could not be recorded"},500);
+      }
+
+      const adTouched = Number(batchResult?.[0]?.meta?.changes || 0);
+      const bonusClaimed = Number(batchResult?.[1]?.meta?.changes || 0);
+      const credited = Number(batchResult?.[2]?.meta?.changes || 0);
+      if (adTouched !== 1 || bonusClaimed !== 1 || credited !== 1) {
+        // The transaction may have rolled forward the claim marker even when
+        // the daily limit changed between checks. Do not award anything unless
+        // all three operations succeeded. Resetting here is safe only when the
+        // balance was not credited; the user can retry with a fresh ad session.
+        if (credited !== 1) {
+          await env.DB.prepare("UPDATE game_bonus_sessions SET claimed_at=NULL WHERE id=? AND user_id=? AND claimed_at IS NOT NULL")
+            .bind(bonusSession, String(auth.user.id)).run();
+        }
+        return json({success:false,message:"X2 bonus could not be credited. Please try again."},400);
+      }
+      await env.DB.prepare("DELETE FROM ad_sessions WHERE id=? AND user_id=?").bind(adSession,String(auth.user.id)).run();
+      await env.DB.prepare("DELETE FROM game_bonus_sessions WHERE id=? AND user_id=?").bind(bonusSession,String(auth.user.id)).run();
+      const userRow = await env.DB.prepare("SELECT * FROM users WHERE id=?").bind(String(auth.user.id)).first();
+      return json({success:true,gameReward:amount * 2,...(await userPayload(env.DB,userRow,settings))});
     }
 
     if (action === "add_reward") {
@@ -606,11 +749,12 @@ async function editBal(id){const v=prompt("New balance");if(v===null)return;try{
 $("userSearch").oninput=renderUsers;$("refreshAdmin").onclick=refreshAdmin;
 $("saveSettings").onclick=async()=>{try{const settings={appName:$("setName").value,currency:$("setCurrency").value,dailyBonusAmount:Number($("setBonus").value),adRewardAmount:Number($("setAdReward").value),dailyAdLimit:Number($("setAdLimit").value),gameRewardAmount:Number($("setGameReward").value),withdrawMethods:$("setMethods").value,adsgramBlockId:$("setBlock").value,payoutProofEnabled:$("setProof").checked};const d=await api("update_settings",{settings});state.settings=d.settings;apply(state);fillSettings(d.settings);toast("Settings saved")}catch(e){toast(e.message)}};
 $("broadcastBtn").onclick=async()=>{const text=$("broadcastText").value.trim();if(!text)return toast("Write a message first");if(!confirm("Send this message to registered users?"))return;const b=$("broadcastBtn");b.disabled=true;try{const d=await api("broadcast",{text});$("broadcastResult").textContent="Sent: "+d.sent+" · Failed: "+d.failed;$("broadcastText").value="";toast("Broadcast finished")}catch(e){toast(e.message)}finally{b.disabled=false}};
-let gameCards=[],gameOpen=[],gameBusy=false,gamePairs=0,gameMoves=0,gameSession="",gameRewardClaimed=false;
-function updateGameRewardUI(){const base=Number(state?.settings?.gameRewardAmount||0);const currency=String(state?.settings?.currency||"BDT");const completed=gamePairs===6;$("gamePoints").textContent=money(completed?base:0);$("gameDoublePoints").textContent=money(completed?base*2:0);$("gamePointsUnit").textContent=currency;$("gameDoubleUnit").textContent=currency;const b=$("x2GameBtn");if(b&&!gameRewardClaimed)b.textContent=completed?"🎁 GET X2 BONUS • "+money(base*2)+" "+currency:"🎁 GET X2 BONUS"}
-async function initGame(){gameCards=[];gameOpen=[];gameBusy=true;gamePairs=0;gameMoves=0;gameSession="";gameRewardClaimed=false;$("pairsFound").textContent="0";$("gameMoves").textContent="0";if($("homePairs"))$("homePairs").textContent="0";$("gameResult").classList.add("hidden");$("x2GameBtn").disabled=true;$("x2GameBtn").textContent="🎁 GET X2 BONUS";updateGameRewardUI();try{const d=await api("start_game",{});gameSession=d.gameSession;const icons=["💎","🚀","⭐","🌙","🔥","🎁"];gameCards=[...icons,...icons].sort(()=>Math.random()-.5);$("gameBoard").innerHTML=gameCards.map((x,i)=>'<button class="gameCard" data-i="'+i+'">?</button>').join("");document.querySelectorAll(".gameCard").forEach(b=>b.onclick=()=>flipCard(Number(b.dataset.i)));gameBusy=false}catch(e){gameBusy=false;toast(e.message)}}
-function flipCard(i){if(gameBusy||gameOpen.includes(i)||gameRewardClaimed)return;const els=document.querySelectorAll(".gameCard");if(!els[i]||els[i].classList.contains("matched"))return;const el=els[i];el.textContent=gameCards[i];el.classList.add("open");gameOpen.push(i);if(gameOpen.length<2)return;gameMoves++;$("gameMoves").textContent=String(gameMoves);const [a,b]=gameOpen;gameBusy=true;if(gameCards[a]===gameCards[b]){els[a].classList.add("matched");els[b].classList.add("matched");gamePairs++;$("pairsFound").textContent=String(gamePairs);if($("homePairs"))$("homePairs").textContent=String(gamePairs);gameOpen=[];gameBusy=false;if(gamePairs===6){updateGameRewardUI();$("gameResult").textContent="🎉 6 pairs completed. Watch the full ad to receive the X2 bonus.";$("gameResult").classList.remove("hidden");$("x2GameBtn").disabled=false}}else{setTimeout(()=>{els[a].textContent="?";els[b].textContent="?";els[a].classList.remove("open");els[b].classList.remove("open");gameOpen=[];gameBusy=false},700)}}
-async function claimGameX2(){const b=$("x2GameBtn");if(b.disabled||gameRewardClaimed||gamePairs!==6)return;b.disabled=true;b.textContent="⏳ WATCHING AD...";try{if(!window.Adsgram)throw new Error("Ads service is unavailable");const id=String(state.settings.adsgramBlockId||"").trim();if(!id)throw new Error("AdsGram Block ID is not configured");const ad=await api("start_ad",{});const c=window.Adsgram.init({blockId:id});const result=await c.show();if(!result||result.done!==true||result.error===true)throw new Error("The ad was not completed");const d=await api("claim_game",{gameSession,pairs:gamePairs,moves:gameMoves,adSession:ad.adSession});gameRewardClaimed=true;apply(d);$("gamePoints").textContent=money(d.gameReward/2);$("gameDoublePoints").textContent=money(d.gameReward);$("gamePointsUnit").textContent=d.settings.currency;$("gameDoubleUnit").textContent=d.settings.currency;b.textContent="✅ X2 BONUS ADDED";$("gameResult").textContent="🎉 X2 Bonus added: "+money(d.gameReward)+" "+d.settings.currency;$("gameResult").classList.remove("hidden");toast("X2 bonus added to your balance")}catch(e){toast(e.message);b.disabled=false;updateGameRewardUI()}}
+let gameCards=[],gameOpen=[],gameBusy=false,gamePairs=0,gameMoves=0,gameSession="",gameBonusSession="",gameBaseClaimed=false,gameX2Claimed=false;
+function updateGameRewardUI(){const base=Number(state?.settings?.gameRewardAmount||0);const currency=String(state?.settings?.currency||"BDT");const completed=gamePairs===6;$("gamePoints").textContent=money(gameBaseClaimed?base:(completed?base:0));$("gameDoublePoints").textContent=money(gameX2Claimed?base*2:(completed?base*2:0));$("gamePointsUnit").textContent=currency;$("gameDoubleUnit").textContent=currency;const b=$("x2GameBtn");if(!b)return;if(gameX2Claimed)b.textContent="✅ X2 BONUS ADDED";else if(gameBaseClaimed)b.textContent="🎁 GET X2 BONUS • "+money(base)+" "+currency;else if(completed)b.textContent="⏳ ADDING POINTS...";else b.textContent="🎁 GET X2 BONUS"}
+async function initGame(){gameCards=[];gameOpen=[];gameBusy=true;gamePairs=0;gameMoves=0;gameSession="";gameBonusSession="";gameBaseClaimed=false;gameX2Claimed=false;$("pairsFound").textContent="0";$("gameMoves").textContent="0";if($("homePairs"))$("homePairs").textContent="0";$("gameResult").classList.add("hidden");$("x2GameBtn").disabled=true;$("x2GameBtn").textContent="🎁 GET X2 BONUS";updateGameRewardUI();try{const d=await api("start_game",{});gameSession=d.gameSession;const icons=["💎","🚀","⭐","🌙","🔥","🎁"];gameCards=[...icons,...icons].sort(()=>Math.random()-.5);$("gameBoard").innerHTML=gameCards.map((x,i)=>'<button class="gameCard" data-i="'+i+'">?</button>').join("");document.querySelectorAll(".gameCard").forEach(b=>b.onclick=()=>flipCard(Number(b.dataset.i)));gameBusy=false}catch(e){gameBusy=false;toast(e.message)}}
+async function claimGameBase(){if(gameBaseClaimed||gamePairs!==6||!gameSession)return;const b=$("x2GameBtn");b.disabled=true;b.textContent="⏳ ADDING POINTS...";try{const d=await api("claim_game",{gameSession,pairs:gamePairs,moves:gameMoves});gameBaseClaimed=true;gameBonusSession=String(d.gameBonusSession||"");apply(d);updateGameRewardUI();b.disabled=!gameBonusSession;$("gameResult").textContent="🎉 +"+money(d.gameReward)+" "+d.settings.currency+" added to your balance. Watch the full ad to get X2.";$("gameResult").classList.remove("hidden");toast("Game points added to your balance")}catch(e){toast(e.message);b.disabled=false;updateGameRewardUI()}}
+function flipCard(i){if(gameBusy||gameOpen.includes(i)||gameBaseClaimed)return;const els=document.querySelectorAll(".gameCard");if(!els[i]||els[i].classList.contains("matched"))return;const el=els[i];el.textContent=gameCards[i];el.classList.add("open");gameOpen.push(i);if(gameOpen.length<2)return;gameMoves++;$("gameMoves").textContent=String(gameMoves);const [a,b]=gameOpen;gameBusy=true;if(gameCards[a]===gameCards[b]){els[a].classList.add("matched");els[b].classList.add("matched");gamePairs++;$("pairsFound").textContent=String(gamePairs);if($("homePairs"))$("homePairs").textContent=String(gamePairs);gameOpen=[];gameBusy=false;if(gamePairs===6){updateGameRewardUI();$("gameResult").textContent="🎉 6 pairs completed. Your game points will be added now.";$("gameResult").classList.remove("hidden");claimGameBase()}}else{setTimeout(()=>{els[a].textContent="?";els[b].textContent="?";els[a].classList.remove("open");els[b].classList.remove("open");gameOpen=[];gameBusy=false},700)}}
+async function claimGameX2(){const b=$("x2GameBtn");if(b.disabled||!gameBaseClaimed||gameX2Claimed||gamePairs!==6||!gameBonusSession)return;b.disabled=true;b.textContent="⏳ WATCHING AD...";try{if(!window.Adsgram)throw new Error("Ads service is unavailable");const id=String(state.settings.adsgramBlockId||"").trim();if(!id)throw new Error("AdsGram Block ID is not configured");const ad=await api("start_ad",{});const c=window.Adsgram.init({blockId:id});const result=await c.show();if(!result||result.done!==true||result.error===true)throw new Error("The ad was not completed");const d=await api("claim_game_x2",{gameBonusSession,adSession:ad.adSession});gameX2Claimed=true;gameBonusSession="";apply(d);$("gamePoints").textContent=money(d.gameReward/2);$("gameDoublePoints").textContent=money(d.gameReward);$("gamePointsUnit").textContent=d.settings.currency;$("gameDoubleUnit").textContent=d.settings.currency;b.textContent="✅ X2 BONUS ADDED";$("gameResult").textContent="🎉 X2 Bonus added: "+money(d.gameReward)+" "+d.settings.currency;$("gameResult").classList.remove("hidden");toast("X2 bonus added to your balance")}catch(e){toast(e.message);b.disabled=false;updateGameRewardUI()}}
 $("x2GameBtn").onclick=claimGameX2;
 $("newGameBtn").onclick=initGame;
 $("playEarnBanner").onclick=()=>document.querySelector('nav button[data-section="games"]')?.click();
