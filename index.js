@@ -259,6 +259,20 @@ async function handleApi(request, env) {
       `).run();
       const cutoff = Date.now() - 30 * 60 * 1000;
       const adCutoff = Date.now() - 10 * 60 * 1000;
+      const amount = Number(settings.gameRewardAmount);
+      if (!Number.isFinite(amount) || amount < 0 || amount > 1000000) {
+        return json({ success:false, message:"Invalid game reward setting" },400);
+      }
+      const limit = Math.max(0, Math.floor(Number(settings.dailyAdLimit || 10)));
+      const today = nowDate();
+      if (limit < 1) return json({success:false,message:"Ads are temporarily unavailable"},400);
+      const currentUser = await env.DB.prepare(
+        "SELECT daily_ad_date,daily_ads_count FROM users WHERE id=?"
+      ).bind(String(auth.user.id)).first();
+      const alreadyUsed = currentUser && String(currentUser.daily_ad_date || "") === today
+        ? Number(currentUser.daily_ads_count || 0)
+        : 0;
+      if (alreadyUsed >= limit) return json({success:false,message:"Daily ad limit reached"},400);
       const consumedAd = await env.DB.prepare(
         "DELETE FROM ad_sessions WHERE id=? AND user_id=? AND created_at>=?"
       ).bind(adSession, String(auth.user.id), adCutoff).run();
@@ -269,13 +283,6 @@ async function handleApi(request, env) {
       if (!consumed.meta.changes) {
         return json({ success:false, message:"Invalid or expired game session" },400);
       }
-      const amount = Number(settings.gameRewardAmount);
-      if (!Number.isFinite(amount) || amount < 0 || amount > 1000000) {
-        return json({ success:false, message:"Invalid game reward setting" },400);
-      }
-      const limit = Math.max(0, Math.floor(Number(settings.dailyAdLimit || 10)));
-      const today = nowDate();
-      if (limit < 1) return json({success:false,message:"Ads are temporarily unavailable"},400);
       const result = await env.DB.prepare(`
         UPDATE users SET balance=balance+?, lifetimeEarned=lifetimeEarned+?, adsWatched=adsWatched+1,
           daily_ad_date=?, daily_ads_count=CASE WHEN daily_ad_date=? THEN daily_ads_count+1 ELSE 1 END
@@ -482,7 +489,7 @@ section{padding-bottom:90px}
 
 .heroTop{display:flex;align-items:center;gap:12px}.logoOrb{width:62px;height:62px;border-radius:50%;display:grid;place-items:center;font-size:34px;font-weight:900;background:radial-gradient(circle at 35% 30%,#b66cff,#5c12ff 55%,#00cfff);box-shadow:0 0 28px rgba(139,61,255,.6)}
 .balanceCard{padding:24px;text-align:center;overflow:hidden;position:relative}.balanceLabel{font-size:13px;letter-spacing:2px;color:#aaa8d2}.balanceCard .balance{font-size:42px;color:#d58cff;text-shadow:0 0 18px rgba(180,76,255,.55);margin:8px 0}
-.quickGrid{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}.quick{padding:14px 8px;text-align:center;background:#101024;border:1px solid rgba(139,61,255,.2);border-radius:17px;color:#fff}.quick .ico{font-size:27px;display:block;margin-bottom:7px}.quick b{font-size:12px}.playBanner{display:flex;align-items:center;gap:14px;padding:17px;background:linear-gradient(110deg,#5b10ff,#9d19ff,#5a13c9);border:0}.playBanner .playIcon{margin-left:auto;width:50px;height:50px;border-radius:50%;display:grid;place-items:center;background:rgba(255,255,255,.18);font-size:22px}
+.quickGrid{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}.quick{padding:14px 8px;text-align:center;background:#101024;border:1px solid rgba(139,61,255,.2);border-radius:17px;color:#fff}.quick .ico{font-size:27px;display:block;margin-bottom:7px}.quick b{font-size:12px}.playBanner{display:flex;align-items:center;gap:14px;padding:17px;background:linear-gradient(110deg,#5b10ff,#9d19ff,#5a13c9);border:0;width:100%;color:#fff;text-align:left;font:inherit;cursor:pointer}.playBanner .playIcon{margin-left:auto;width:50px;height:50px;border-radius:50%;display:grid;place-items:center;background:rgba(255,255,255,.18);font-size:22px;flex:0 0 auto}
 .gameHeader{display:flex;align-items:center;justify-content:space-between}.gameBoard{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin-top:14px}.gameCard{aspect-ratio:1/1;border:1px solid rgba(139,61,255,.35);border-radius:15px;background:linear-gradient(145deg,#17172b,#0d0e1e);color:transparent;font-size:28px;display:grid;place-items:center;cursor:pointer;transition:transform .15s,background .15s,box-shadow .15s}.gameCard.open,.gameCard.matched{color:#fff;background:linear-gradient(145deg,#701cff,#34106d);box-shadow:0 0 18px rgba(126,35,255,.35)}.gameCard.matched{background:linear-gradient(145deg,#1f8c75,#11473e);border-color:rgba(53,221,173,.5)}.gameMeta{display:flex;justify-content:space-between;color:#b9b3d4;font-size:13px}.gameResult{text-align:center;padding:14px;border-radius:15px;background:#111225;margin-top:12px}
 body{background:radial-gradient(circle at 50% -10%,#25105b 0,#090716 38%,#03040a 78%)}.card{background:linear-gradient(145deg,rgba(20,19,48,.96),rgba(9,10,25,.96));border-color:rgba(139,61,255,.28);box-shadow:0 0 24px rgba(111,35,255,.08)}.primary{background:linear-gradient(135deg,#7118ff,#c32dff);box-shadow:0 8px 24px rgba(128,30,255,.25)}nav{background:rgba(10,9,25,.96);border-top-color:rgba(139,61,255,.18);backdrop-filter:blur(10px)}nav button.active{color:#b946ff}
 .gameShell{position:relative;overflow:hidden}.gameShell:before{content:"";position:absolute;inset:-100px -80px auto auto;width:230px;height:230px;background:radial-gradient(circle,rgba(169,62,255,.25),transparent 68%);pointer-events:none}.gamePointsGrid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin:16px 0}.gamePointBox{padding:14px 10px;text-align:center;border-radius:16px;background:linear-gradient(145deg,#161431,#0b0a18);border:1px solid rgba(180,76,255,.35);box-shadow:inset 0 0 22px rgba(127,35,255,.08)}.gamePointBox span{display:block;font-size:10px;letter-spacing:1.1px}.gamePointBox b{display:block;font-size:25px;color:#d98cff;text-shadow:0 0 16px rgba(197,76,255,.55);margin:5px 0 1px}.gamePointBox small{color:#b8a6d5;font-weight:700}.x2Button{width:100%;border:0;border-radius:17px;padding:17px 16px;margin-top:12px;font-size:18px;font-weight:900;color:#fff;background:linear-gradient(100deg,#6712ff,#c329ff,#7017ff);box-shadow:0 10px 30px rgba(130,28,255,.35);cursor:pointer;letter-spacing:.3px}.x2Button:disabled{opacity:.45;cursor:not-allowed;box-shadow:none}.gameResult{border:1px solid rgba(180,76,255,.25)}
@@ -501,7 +508,7 @@ body{background:radial-gradient(circle at 50% -10%,#25105b 0,#090716 38%,#03040a
     <button class="quick" data-section="withdraw"><span class="ico">💳</span><b>Wallet</b><div class="muted">Withdraw</div></button>
     <button class="quick" id="inviteQuick"><span class="ico">👥</span><b>Invite Friends</b><div class="muted">Coming soon</div></button>
   </div>
-  <div class="card playBanner"><div><h3 style="margin:0 0 4px">Play & Earn</h3><div>Complete tasks and play games.</div></div><div class="playIcon">▶</div></div>
+  <button id="playEarnBanner" class="card playBanner" type="button"><div><h3 style="margin:0 0 4px">Play & Earn</h3><div>Complete tasks and play games.</div></div><div class="playIcon">▶</div></button>
   <div class="card"><h3>Daily Check-in</h3><p id="bonusText" class="muted"></p><button id="bonusBtn" class="primary">Claim Daily Bonus</button></div>
   <div class="card"><h3>Earn with Ads</h3><p>Watch an optional rewarded ad to receive the displayed bonus. You never need to click the advertisement.</p><div class="row space"><span class="tag">Rewarded Ad</span><span class="muted">Today: <b id="adsToday">0</b></span></div><br><button id="adBtn" class="primary">📺 Watch Ad for Bonus</button></div>
   <div class="card"><h3>Recent Payout Proof</h3><p class="muted">Completed withdrawals are shown here as payout confirmations.</p><div id="proofList" class="proof">Loading...</div></div>
@@ -595,9 +602,11 @@ async function claimGameX2(){const b=$("x2GameBtn");if(b.disabled||gameRewardCla
 $("x2GameBtn").onclick=claimGameX2;
 $("newGameBtn").onclick=initGame;
 document.querySelectorAll(".quick[data-section]").forEach(b=>b.onclick=()=>{const target=b.dataset.section;document.querySelector('nav button[data-section="'+target+'"]')?.click()});
-initGame();
+$("playEarnBanner").onclick=()=>document.querySelector('nav button[data-section="games"]')?.click();
+// Start the first game only after Telegram authentication has completed.
+// Starting it earlier would send an empty initData and fail authentication.
 document.querySelectorAll("nav button[data-section]").forEach(b=>b.onclick=()=>{if(b.classList.contains("hidden"))return;document.querySelectorAll("section").forEach(s=>s.classList.add("hidden"));$(b.dataset.section).classList.remove("hidden");document.querySelectorAll("nav button").forEach(x=>x.classList.remove("active"));b.classList.add("active");if(b.dataset.section==="admin")refreshAdmin()});
-(async()=>{try{if(!tg)throw new Error("Open this app from Telegram");tg.ready();tg.expand();initData=tg.initData||"";if(!initData)throw new Error("Telegram session is unavailable");await refresh()}catch(e){$("headerName").textContent=e.message;toast(e.message)}finally{$("loading").style.display="none"}})();
+(async()=>{try{if(!tg)throw new Error("Open this app from Telegram");tg.ready();tg.expand();initData=tg.initData||"";if(!initData)throw new Error("Telegram session is unavailable");await refresh();await initGame()}catch(e){$("headerName").textContent=e.message;toast(e.message)}finally{$("loading").style.display="none"}})();
 </script>
 </body>
 </html>`;
