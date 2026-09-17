@@ -4,6 +4,7 @@ const DEFAULT_SETTINGS = {
   dailyBonusAmount: 0.10,
   adRewardAmount: 0.10,
   dailyAdLimit: 10,
+  gameRewardAmount: 0.10,
   withdrawMethods: "bKash:200, Nagad:200, Rocket:200, Binance:5",
   adsgramBlockId: "28773",
   appName: "Zelvuno",
@@ -215,6 +216,76 @@ async function handleApi(request, env) {
       return json({ success: true, adSession: sessionId });
     }
 
+    if (action === "start_game") {
+      const auth = await requireUser(env, input);
+      await env.DB.prepare(`
+        CREATE TABLE IF NOT EXISTS game_sessions (
+          id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL,
+          created_at INTEGER NOT NULL
+        )
+      `).run();
+      const sessionId = crypto.randomUUID();
+      await env.DB.prepare("DELETE FROM game_sessions WHERE user_id=?").bind(String(auth.user.id)).run();
+      await env.DB.prepare(
+        "INSERT INTO game_sessions(id,user_id,created_at) VALUES(?,?,?)"
+      ).bind(sessionId, String(auth.user.id), Date.now()).run();
+      return json({ success: true, gameSession: sessionId });
+    }
+
+    if (action === "claim_game") {
+      const auth = await requireUser(env, input);
+      const settings = await getSettings(env.DB);
+      const gameSession = String(input.gameSession || "").trim();
+      const adSession = String(input.adSession || "").trim();
+      const pairs = Number(input.pairs || 0);
+      const moves = Number(input.moves || 0);
+      if (!gameSession || gameSession.length > 100 || !adSession || adSession.length > 100 || pairs !== 6 || !Number.isInteger(moves) || moves < 6 || moves > 500) {
+        return json({ success:false, message:"Invalid game completion" },400);
+      }
+      await env.DB.prepare(`
+        CREATE TABLE IF NOT EXISTS game_sessions (
+          id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL,
+          created_at INTEGER NOT NULL
+        )
+      `).run();
+      await env.DB.prepare(`
+        CREATE TABLE IF NOT EXISTS ad_sessions (
+          id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL,
+          created_at INTEGER NOT NULL
+        )
+      `).run();
+      const cutoff = Date.now() - 30 * 60 * 1000;
+      const adCutoff = Date.now() - 10 * 60 * 1000;
+      const consumedAd = await env.DB.prepare(
+        "DELETE FROM ad_sessions WHERE id=? AND user_id=? AND created_at>=?"
+      ).bind(adSession, String(auth.user.id), adCutoff).run();
+      if (!consumedAd.meta.changes) return json({success:false,message:"Invalid or expired ad session"},400);
+      const consumed = await env.DB.prepare(
+        "DELETE FROM game_sessions WHERE id=? AND user_id=? AND created_at>=?"
+      ).bind(gameSession, String(auth.user.id), cutoff).run();
+      if (!consumed.meta.changes) {
+        return json({ success:false, message:"Invalid or expired game session" },400);
+      }
+      const amount = Number(settings.gameRewardAmount);
+      if (!Number.isFinite(amount) || amount < 0 || amount > 1000000) {
+        return json({ success:false, message:"Invalid game reward setting" },400);
+      }
+      const limit = Math.max(0, Math.floor(Number(settings.dailyAdLimit || 10)));
+      const today = nowDate();
+      if (limit < 1) return json({success:false,message:"Ads are temporarily unavailable"},400);
+      const result = await env.DB.prepare(`
+        UPDATE users SET balance=balance+?, lifetimeEarned=lifetimeEarned+?, adsWatched=adsWatched+1,
+          daily_ad_date=?, daily_ads_count=CASE WHEN daily_ad_date=? THEN daily_ads_count+1 ELSE 1 END
+        WHERE id=? AND (daily_ad_date<>? OR daily_ad_date IS NULL OR daily_ads_count<?)
+      `).bind(amount * 2, amount * 2, today, today, String(auth.user.id), today, limit).run();
+      if (!result.meta.changes) return json({ success:false, message:"Daily ad limit reached" },400);
+      const row = await env.DB.prepare("SELECT * FROM users WHERE id=?").bind(String(auth.user.id)).first();
+      return json({ success:true, gameReward:amount * 2, ...(await userPayload(env.DB,row,settings)) });
+    }
+
     if (action === "add_reward") {
       const auth = await requireUser(env, input);
       const settings = await getSettings(env.DB);
@@ -348,7 +419,8 @@ async function handleApi(request, env) {
       const adReward=Number(incoming.adRewardAmount);
       const bonus=Number(incoming.dailyBonusAmount);
       const limit=Math.floor(Number(incoming.dailyAdLimit));
-      if(!Number.isFinite(adReward)||adReward<0||!Number.isFinite(bonus)||bonus<0||!Number.isFinite(limit)||limit<0||limit>1000)
+      const gameReward=Number(incoming.gameRewardAmount);
+      if(!Number.isFinite(adReward)||adReward<0||!Number.isFinite(bonus)||bonus<0||!Number.isFinite(limit)||limit<0||limit>1000||!Number.isFinite(gameReward)||gameReward<0||gameReward>1000000)
         return json({success:false,message:"Invalid settings"},400);
       const settings={
         ...DEFAULT_SETTINGS,
@@ -356,6 +428,7 @@ async function handleApi(request, env) {
         dailyBonusAmount:bonus,
         adRewardAmount:adReward,
         dailyAdLimit:limit,
+        gameRewardAmount:gameReward,
         withdrawMethods:String(incoming.withdrawMethods??DEFAULT_SETTINGS.withdrawMethods).slice(0,1000),
         adsgramBlockId:String(incoming.adsgramBlockId??DEFAULT_SETTINGS.adsgramBlockId).trim().slice(0,100),
         appName:String(incoming.appName??DEFAULT_SETTINGS.appName).trim().slice(0,40)||"Zelvuno",
@@ -412,6 +485,7 @@ section{padding-bottom:90px}
 .quickGrid{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}.quick{padding:14px 8px;text-align:center;background:#101024;border:1px solid rgba(139,61,255,.2);border-radius:17px;color:#fff}.quick .ico{font-size:27px;display:block;margin-bottom:7px}.quick b{font-size:12px}.playBanner{display:flex;align-items:center;gap:14px;padding:17px;background:linear-gradient(110deg,#5b10ff,#9d19ff,#5a13c9);border:0}.playBanner .playIcon{margin-left:auto;width:50px;height:50px;border-radius:50%;display:grid;place-items:center;background:rgba(255,255,255,.18);font-size:22px}
 .gameHeader{display:flex;align-items:center;justify-content:space-between}.gameBoard{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin-top:14px}.gameCard{aspect-ratio:1/1;border:1px solid rgba(139,61,255,.35);border-radius:15px;background:linear-gradient(145deg,#17172b,#0d0e1e);color:transparent;font-size:28px;display:grid;place-items:center;cursor:pointer;transition:transform .15s,background .15s,box-shadow .15s}.gameCard.open,.gameCard.matched{color:#fff;background:linear-gradient(145deg,#701cff,#34106d);box-shadow:0 0 18px rgba(126,35,255,.35)}.gameCard.matched{background:linear-gradient(145deg,#1f8c75,#11473e);border-color:rgba(53,221,173,.5)}.gameMeta{display:flex;justify-content:space-between;color:#b9b3d4;font-size:13px}.gameResult{text-align:center;padding:14px;border-radius:15px;background:#111225;margin-top:12px}
 body{background:radial-gradient(circle at 50% -10%,#25105b 0,#090716 38%,#03040a 78%)}.card{background:linear-gradient(145deg,rgba(20,19,48,.96),rgba(9,10,25,.96));border-color:rgba(139,61,255,.28);box-shadow:0 0 24px rgba(111,35,255,.08)}.primary{background:linear-gradient(135deg,#7118ff,#c32dff);box-shadow:0 8px 24px rgba(128,30,255,.25)}nav{background:rgba(10,9,25,.96);border-top-color:rgba(139,61,255,.18);backdrop-filter:blur(10px)}nav button.active{color:#b946ff}
+.gameShell{position:relative;overflow:hidden}.gameShell:before{content:"";position:absolute;inset:-100px -80px auto auto;width:230px;height:230px;background:radial-gradient(circle,rgba(169,62,255,.25),transparent 68%);pointer-events:none}.gamePointsGrid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin:16px 0}.gamePointBox{padding:14px 10px;text-align:center;border-radius:16px;background:linear-gradient(145deg,#161431,#0b0a18);border:1px solid rgba(180,76,255,.35);box-shadow:inset 0 0 22px rgba(127,35,255,.08)}.gamePointBox span{display:block;font-size:10px;letter-spacing:1.1px}.gamePointBox b{display:block;font-size:25px;color:#d98cff;text-shadow:0 0 16px rgba(197,76,255,.55);margin:5px 0 1px}.gamePointBox small{color:#b8a6d5;font-weight:700}.x2Button{width:100%;border:0;border-radius:17px;padding:17px 16px;margin-top:12px;font-size:18px;font-weight:900;color:#fff;background:linear-gradient(100deg,#6712ff,#c329ff,#7017ff);box-shadow:0 10px 30px rgba(130,28,255,.35);cursor:pointer;letter-spacing:.3px}.x2Button:disabled{opacity:.45;cursor:not-allowed;box-shadow:none}.gameResult{border:1px solid rgba(180,76,255,.25)}
 @media(max-width:430px){.quickGrid{grid-template-columns:repeat(2,1fr)}.gameCard{font-size:24px}}
 </style>
 </head>
@@ -434,13 +508,18 @@ body{background:radial-gradient(circle at 50% -10%,#25105b 0,#090716 38%,#03040a
 </section>
 
 <section id="games" class="hidden">
-  <div class="card"><div class="gameHeader"><div><h2 style="margin:0">🎮 Galaxy Match</h2><p class="muted" style="margin:5px 0 0">Find all matching pairs.</p></div><span class="tag">6 Pairs</span></div>
+  <div class="card gameShell"><div class="gameHeader"><div><div class="muted">PLAY & EARN</div><h2 style="margin:3px 0 0">🎮 Galaxy Match</h2><p class="muted" style="margin:5px 0 0">Find all matching pairs and collect points.</p></div><span class="tag">6 Pairs</span></div>
+    <div class="gamePointsGrid">
+      <div class="gamePointBox"><span class="muted">POINTS EARNED</span><b id="gamePoints">0.00</b><small id="gamePointsUnit">BDT</small></div>
+      <div class="gamePointBox"><span class="muted">X2 BONUS</span><b id="gameDoublePoints">0.00</b><small id="gameDoubleUnit">BDT</small></div>
+    </div>
     <div class="gameMeta"><span>Pairs: <b id="pairsFound">0</b>/6</span><span>Moves: <b id="gameMoves">0</b></span></div>
     <div id="gameBoard" class="gameBoard"></div>
     <div id="gameResult" class="gameResult hidden"></div>
-    <button id="newGameBtn" class="ghost" style="width:100%;margin-top:12px">🔄 New Game</button>
+    <button id="x2GameBtn" class="x2Button" disabled>🎁 GET X2 BONUS</button>
+    <button id="newGameBtn" class="ghost" style="width:100%;margin-top:10px">🔄 New Game</button>
   </div>
-  <div class="card"><h3>How to play</h3><p class="muted">Tap two cards to reveal them. Match all six pairs to complete the game. This game is for entertainment and does not directly change your withdrawal balance.</p></div>
+  <div class="card"><h3>How to play</h3><p class="muted">Match all six pairs. When you finish, the base points appear above. Watch the full rewarded ad using “GET X2 BONUS” to receive double the displayed game reward.</p></div>
 </section>
 
 <section id="withdraw" class="hidden">
@@ -469,6 +548,7 @@ body{background:radial-gradient(circle at 50% -10%,#25105b 0,#090716 38%,#03040a
     <label>Daily bonus</label><input id="setBonus" type="number" step="0.01">
     <label>Reward per completed ad</label><input id="setAdReward" type="number" step="0.01">
     <label>Daily ad limit</label><input id="setAdLimit" type="number" min="1" max="1000">
+    <label>Galaxy Match base reward</label><input id="setGameReward" type="number" step="0.01" min="0">
     <label>Withdrawal methods (Name:Minimum, comma separated)</label><input id="setMethods">
     <label>AdsGram Block ID</label><input id="setBlock">
     <label><input id="setProof" type="checkbox" style="width:auto"> Show payout proof section</label><br><button id="saveSettings" class="primary">Save Settings</button>
@@ -485,7 +565,7 @@ const tg=window.Telegram?.WebApp;let initData="",state=null,isAdmin=false,adminC
 const $=id=>document.getElementById(id);
 function toast(m){const e=$("toast");e.textContent=m;e.style.display="block";clearTimeout(window.__t);window.__t=setTimeout(()=>e.style.display="none",2600)}
 function money(v){return Number(v||0).toFixed(2)}
-function esc(s){return String(s??"").replace(/[&<>'"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;","\\"":"&quot;"}[c]||c))}
+function esc(s){return String(s??"").replace(/[&<>'"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[c]||c))}
 async function api(action,body={}){const r=await fetch("/api?action="+encodeURIComponent(action),{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({...body,initData})});let d={};try{d=await r.json()}catch{}if(!r.ok||d.success===false)throw new Error(d.message||"Request failed");return d}
 function apply(data){state=data;isAdmin=!!data.isAdmin;const u=data.user,s=data.settings;$("headerName").textContent=u.firstName+(u.lastName?" "+u.lastName:"");$("homeBalance").textContent=money(u.balance);$("withdrawBalance").textContent=money(u.balance);$("homeCurrency").textContent=s.currency;$("withdrawCurrency").textContent=s.currency;$("adsToday").textContent=u.dailyAdDate===new Date().toISOString().slice(0,10)?u.dailyAdsCount:0;$("bonusText").textContent=data.bonusClaimed?"Already claimed today":"Today: "+money(s.dailyBonusAmount)+" "+s.currency;$("bonusBtn").disabled=data.bonusClaimed;fillMethods(s.withdrawMethods);renderHistory(u.withdrawHistory);if(isAdmin)$("adminNav").classList.remove("hidden")}
 function fillMethods(text){const e=$("paymentMethod"),old=e.value;e.innerHTML='<option value="">Choose Method</option>';String(text||"").split(",").forEach(x=>{const [n,m]=x.split(":");if(!n)return;const o=document.createElement("option");o.value=n.trim();o.textContent=n.trim()+" (min "+Number(m||0)+")";e.appendChild(o)});if(old)e.value=old}
@@ -497,21 +577,24 @@ $("bonusBtn").onclick=async()=>{try{apply(await api("add_reward",{type:"bonus"})
 $("adBtn").onclick=watchAd;
 $("withdrawBtn").onclick=async()=>{try{const amount=Number($("withdrawAmount").value),method=$("paymentMethod").value,address=$("withdrawAddress").value.trim();apply(await api("withdraw",{amount,method,address}));$("withdrawAmount").value="";$("withdrawAddress").value="";toast("Withdrawal submitted")}catch(e){toast(e.message)}};
 
-function fillSettings(s){$("setName").value=s.appName||"Zelvuno";$("setCurrency").value=s.currency;$("setBonus").value=s.dailyBonusAmount;$("setAdReward").value=s.adRewardAmount;$("setAdLimit").value=s.dailyAdLimit;$("setMethods").value=s.withdrawMethods;$("setBlock").value=s.adsgramBlockId;$("setProof").checked=!!s.payoutProofEnabled}
+function fillSettings(s){$("setName").value=s.appName||"Zelvuno";$("setCurrency").value=s.currency;$("setBonus").value=s.dailyBonusAmount;$("setAdReward").value=s.adRewardAmount;$("setAdLimit").value=s.dailyAdLimit;$("setGameReward").value=s.gameRewardAmount??0.10;$("setMethods").value=s.withdrawMethods;$("setBlock").value=s.adsgramBlockId;$("setProof").checked=!!s.payoutProofEnabled}
 function renderStats(s){$("sUsers").textContent=s.users||0;$("sBalances").textContent=money(s.balances);$("sEarned").textContent=money(s.earned);$("sPending").textContent=s.pending||0;$("sPaid").textContent=s.paidCount||0;$("sPaidAmount").textContent=money(s.paid)}
-function renderUsers(){const q=$("userSearch").value.trim().toLowerCase(),users=adminCache?.users||{};const arr=Object.values(users).filter(u=>(u.id+" "+u.firstName+" "+u.lastName+" "+u.username).toLowerCase().includes(q));$("usersList").innerHTML=arr.length?arr.map(u=>'<div class="item"><b>'+esc((u.firstName+" "+u.lastName).trim())+'</b><br><span class="muted">@'+esc(u.username||"no_username")+' · ID '+esc(u.id)+'</span><br>Balance: <b>'+money(u.balance)+'</b> · Ads: '+u.adsWatched+'<br><button class="ghost small" onclick="editBal(\\''+esc(u.id)+'\\')">Edit Balance</button></div>').join(""):'<p class="muted">No matching users.</p>'}
-function renderWithdrawals(){const arr=adminCache?.withdrawals||[];$("withdrawalsList").innerHTML=arr.length?arr.map(w=>'<div class="item"><b>'+money(w.amount)+'</b> '+esc(w.method)+' <span class="tag">'+esc(w.status)+'</span><br><span class="muted">'+esc((w.firstName||"")+" "+(w.lastName||""))+' · ID '+esc(w.user_id)+' · '+esc(w.created_at||"")+'</span><br>Account: '+esc(w.address)+(w.status==="Pending"?'<br><button class="success small" onclick="processW('+Number(w.id)+',\\''+esc(w.user_id)+'\\',\\'Completed\\')">Mark Paid</button> <button class="danger small" onclick="processW('+Number(w.id)+',\\''+esc(w.user_id)+'\\',\\'Cancelled\\')">Cancel + Refund</button>':'')+'</div>').join(""):'<p class="muted">No withdrawals.</p>'}
+function renderUsers(){const q=$("userSearch").value.trim().toLowerCase(),users=adminCache?.users||{};const arr=Object.values(users).filter(u=>(u.id+" "+u.firstName+" "+u.lastName+" "+u.username).toLowerCase().includes(q));$("usersList").innerHTML=arr.length?arr.map(u=>'<div class="item"><b>'+esc((u.firstName+" "+u.lastName).trim())+'</b><br><span class="muted">@'+esc(u.username||"no_username")+' · ID '+esc(u.id)+'</span><br>Balance: <b>'+money(u.balance)+'</b> · Ads: '+u.adsWatched+'<br><button class="ghost small" data-edit-id="'+esc(u.id)+'">Edit Balance</button></div>').join(""):'<p class="muted">No matching users.</p>';document.querySelectorAll("[data-edit-id]").forEach(b=>b.onclick=()=>editBal(b.dataset.editId))}
+function renderWithdrawals(){const arr=adminCache?.withdrawals||[];$("withdrawalsList").innerHTML=arr.length?arr.map(w=>'<div class="item"><b>'+money(w.amount)+'</b> '+esc(w.method)+' <span class="tag">'+esc(w.status)+'</span><br><span class="muted">'+esc((w.firstName||"")+" "+(w.lastName||""))+' · ID '+esc(w.user_id)+' · '+esc(w.created_at||"")+'</span><br>Account: '+esc(w.address)+(w.status==="Pending"?'<br><button class="success small" data-wid="'+Number(w.id)+'" data-wuser="'+esc(w.user_id)+'" data-wstatus="Completed">Mark Paid</button> <button class="danger small" data-wid="'+Number(w.id)+'" data-wuser="'+esc(w.user_id)+'" data-wstatus="Cancelled">Cancel + Refund</button>':'')+'</div>').join(""):'<p class="muted">No withdrawals.</p>';document.querySelectorAll("[data-wid]").forEach(b=>b.onclick=()=>processW(Number(b.dataset.wid),b.dataset.wuser,b.dataset.wstatus))}
 async function refreshAdmin(){if(!isAdmin)return;try{adminCache=await api("admin_data");renderStats(adminCache.stats);renderUsers();renderWithdrawals();fillSettings(state.settings)}catch(e){toast(e.message)}}
 async function processW(id,user,status){if(!confirm(status==="Completed"?"Mark this withdrawal as paid?":"Cancel and refund this withdrawal?"))return;try{await api("update_withdraw_status",{id,target_user:user,status});await refreshAdmin();toast(status==="Completed"?"Marked as paid":"Cancelled and refunded")}catch(e){toast(e.message)}}
 async function editBal(id){const v=prompt("New balance");if(v===null)return;try{await api("edit_balance",{target_user:id,new_balance:Number(v)});await refreshAdmin();toast("Balance updated")}catch(e){toast(e.message)}}
 $("userSearch").oninput=renderUsers;$("refreshAdmin").onclick=refreshAdmin;
-$("saveSettings").onclick=async()=>{try{const settings={appName:$("setName").value,currency:$("setCurrency").value,dailyBonusAmount:Number($("setBonus").value),adRewardAmount:Number($("setAdReward").value),dailyAdLimit:Number($("setAdLimit").value),withdrawMethods:$("setMethods").value,adsgramBlockId:$("setBlock").value,payoutProofEnabled:$("setProof").checked};const d=await api("update_settings",{settings});state.settings=d.settings;apply(state);fillSettings(d.settings);toast("Settings saved")}catch(e){toast(e.message)}};
+$("saveSettings").onclick=async()=>{try{const settings={appName:$("setName").value,currency:$("setCurrency").value,dailyBonusAmount:Number($("setBonus").value),adRewardAmount:Number($("setAdReward").value),dailyAdLimit:Number($("setAdLimit").value),gameRewardAmount:Number($("setGameReward").value),withdrawMethods:$("setMethods").value,adsgramBlockId:$("setBlock").value,payoutProofEnabled:$("setProof").checked};const d=await api("update_settings",{settings});state.settings=d.settings;apply(state);fillSettings(d.settings);toast("Settings saved")}catch(e){toast(e.message)}};
 $("broadcastBtn").onclick=async()=>{const text=$("broadcastText").value.trim();if(!text)return toast("Write a message first");if(!confirm("Send this message to registered users?"))return;const b=$("broadcastBtn");b.disabled=true;try{const d=await api("broadcast",{text});$("broadcastResult").textContent="Sent: "+d.sent+" · Failed: "+d.failed;$("broadcastText").value="";toast("Broadcast finished")}catch(e){toast(e.message)}finally{b.disabled=false}};
-let gameCards=[],gameOpen=[],gameBusy=false,gamePairs=0,gameMoves=0;
-function initGame(){const icons=["💎","🚀","⭐","🌙","🔥","🎁"];gameCards=[...icons,...icons].sort(()=>Math.random()-.5);gameOpen=[];gamePairs=0;gameMoves=0;gameBusy=false;$("pairsFound").textContent="0";$("gameMoves").textContent="0";$("gameResult").classList.add("hidden");$("gameBoard").innerHTML=gameCards.map((x,i)=>'<button class="gameCard" data-i="'+i+'">?</button>').join("");document.querySelectorAll(".gameCard").forEach(b=>b.onclick=()=>flipCard(Number(b.dataset.i)))}
-function flipCard(i){if(gameBusy||gameOpen.includes(i)||document.querySelectorAll(".gameCard")[i].classList.contains("matched"))return;const el=document.querySelectorAll(".gameCard")[i];el.textContent=gameCards[i];el.classList.add("open");gameOpen.push(i);if(gameOpen.length<2)return;gameMoves++;$("gameMoves").textContent=String(gameMoves);const [a,b]=gameOpen;gameBusy=true;const els=document.querySelectorAll(".gameCard");if(gameCards[a]===gameCards[b]){els[a].classList.add("matched");els[b].classList.add("matched");gamePairs++;$("pairsFound").textContent=String(gamePairs);gameOpen=[];gameBusy=false;if(gamePairs===6){$("gameResult").textContent="🎉 Congratulations! You found all 6 pairs in "+gameMoves+" moves.";$("gameResult").classList.remove("hidden")}}else{setTimeout(()=>{els[a].textContent="?";els[b].textContent="?";els[a].classList.remove("open");els[b].classList.remove("open");gameOpen=[];gameBusy=false},700)}}
+let gameCards=[],gameOpen=[],gameBusy=false,gamePairs=0,gameMoves=0,gameSession="",gameRewardClaimed=false;
+function updateGameRewardUI(){const base=Number(state?.settings?.gameRewardAmount||0);const currency=String(state?.settings?.currency||"BDT");$("gamePoints").textContent=money(gamePairs===6?base:0);$("gameDoublePoints").textContent=money(gamePairs===6?base*2:0);$("gamePointsUnit").textContent=currency;$("gameDoubleUnit").textContent=currency}
+async function initGame(){gameCards=[];gameOpen=[];gameBusy=true;gamePairs=0;gameMoves=0;gameSession="";gameRewardClaimed=false;$("pairsFound").textContent="0";$("gameMoves").textContent="0";$("gameResult").classList.add("hidden");$("x2GameBtn").disabled=true;updateGameRewardUI();try{const d=await api("start_game",{});gameSession=d.gameSession;const icons=["💎","🚀","⭐","🌙","🔥","🎁"];gameCards=[...icons,...icons].sort(()=>Math.random()-.5);$("gameBoard").innerHTML=gameCards.map((x,i)=>'<button class="gameCard" data-i="'+i+'">?</button>').join("");document.querySelectorAll(".gameCard").forEach(b=>b.onclick=()=>flipCard(Number(b.dataset.i)));gameBusy=false}catch(e){gameBusy=false;toast(e.message)}}
+function flipCard(i){if(gameBusy||gameOpen.includes(i)||gameRewardClaimed)return;const els=document.querySelectorAll(".gameCard");if(!els[i]||els[i].classList.contains("matched"))return;const el=els[i];el.textContent=gameCards[i];el.classList.add("open");gameOpen.push(i);if(gameOpen.length<2)return;gameMoves++;$("gameMoves").textContent=String(gameMoves);const [a,b]=gameOpen;gameBusy=true;if(gameCards[a]===gameCards[b]){els[a].classList.add("matched");els[b].classList.add("matched");gamePairs++;$("pairsFound").textContent=String(gamePairs);gameOpen=[];gameBusy=false;if(gamePairs===6){updateGameRewardUI();$("gameResult").textContent="🎉 You found all 6 pairs! Watch the full ad to get double points.";$("gameResult").classList.remove("hidden");$("x2GameBtn").disabled=false}}else{setTimeout(()=>{els[a].textContent="?";els[b].textContent="?";els[a].classList.remove("open");els[b].classList.remove("open");gameOpen=[];gameBusy=false},700)}}
+async function claimGameX2(){const b=$("x2GameBtn");if(b.disabled||gameRewardClaimed||gamePairs!==6)return;b.disabled=true;try{if(!window.Adsgram)throw new Error("Ads service is unavailable");const id=String(state.settings.adsgramBlockId||"").trim();if(!id)throw new Error("AdsGram Block ID is not configured");const ad=await api("start_ad",{});const c=window.Adsgram.init({blockId:id});const result=await c.show();if(!result||result.done!==true)throw new Error("Watch the full ad to receive X2 bonus");const d=await api("claim_game",{gameSession,pairs:gamePairs,moves:gameMoves,adSession:ad.adSession});gameRewardClaimed=true;apply(d);$("gameResult").textContent="🎉 X2 Bonus added: "+money(d.gameReward)+" "+d.settings.currency;$("gameResult").classList.remove("hidden");toast("X2 bonus added")}catch(e){toast(e.message);b.disabled=false}}
+$("x2GameBtn").onclick=claimGameX2;
 $("newGameBtn").onclick=initGame;
-document.querySelectorAll(".quick[data-section]").forEach(b=>b.onclick=()=>{const target=b.dataset.section;document.querySelectorAll("nav button[data-section]").forEach(n=>n.click());if(target!=="home"){document.querySelector('nav button[data-section="'+target+'"]')?.click()}});
+document.querySelectorAll(".quick[data-section]").forEach(b=>b.onclick=()=>{const target=b.dataset.section;document.querySelector('nav button[data-section="'+target+'"]')?.click()});
 initGame();
 document.querySelectorAll("nav button[data-section]").forEach(b=>b.onclick=()=>{if(b.classList.contains("hidden"))return;document.querySelectorAll("section").forEach(s=>s.classList.add("hidden"));$(b.dataset.section).classList.remove("hidden");document.querySelectorAll("nav button").forEach(x=>x.classList.remove("active"));b.classList.add("active");if(b.dataset.section==="admin")refreshAdmin()});
 (async()=>{try{if(!tg)throw new Error("Open this app from Telegram");tg.ready();tg.expand();initData=tg.initData||"";if(!initData)throw new Error("Telegram session is unavailable");await refresh()}catch(e){$("headerName").textContent=e.message;toast(e.message)}finally{$("loading").style.display="none"}})();
