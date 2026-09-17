@@ -406,16 +406,41 @@ const HTML = `<!doctype html>
 <style>
 *{box-sizing:border-box}body{margin:0;background:#050b14;color:#fff;font-family:Arial,sans-serif}.container{width:94%;max-width:720px;margin:auto;padding-top:12px}.card{background:#10192b;border:1px solid rgba(255,255,255,.08);border-radius:20px;padding:18px;margin:14px 0}.hero{padding:22px}.balance{font-size:30px;font-weight:800;color:#19c9f5}.muted{color:#9aa6b2;font-size:13px}.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}.stat{background:#0a1220;border-radius:14px;padding:13px}.stat b{font-size:19px;display:block;margin-top:5px}.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.space{justify-content:space-between}.primary,.success,.danger,.ghost{border:0;border-radius:12px;padding:12px 16px;font-weight:700;cursor:pointer}.primary{background:linear-gradient(135deg,#08c8dc,#356bdc);color:#fff}.success{background:#36c98f;color:#001018}.danger{background:#e45b68;color:#fff}.ghost{background:#18253a;color:#dbe7f3}.small{padding:8px 10px;font-size:12px}button:disabled{opacity:.5}input,select,textarea{width:100%;padding:13px;margin:6px 0;background:#050b14;color:#fff;border:1px solid rgba(255,255,255,.15);border-radius:12px;font:inherit}textarea{min-height:110px;resize:vertical}.table{overflow:auto}.item{border-bottom:1px solid rgba(255,255,255,.08);padding:12px 0}.item:last-child{border-bottom:0}.tag{display:inline-block;padding:4px 8px;border-radius:20px;background:#17253b;color:#9edfff;font-size:11px}.hidden{display:none!important}nav{position:fixed;bottom:0;left:0;right:0;height:70px;background:#10192b;border-top:1px solid rgba(255,255,255,.08);display:flex;justify-content:space-around;align-items:center;z-index:20}nav button{background:none;border:0;color:#9aa6b2;font-weight:700}nav button.active{color:#16c8ef}.toast{position:fixed;top:18px;left:50%;transform:translateX(-50%);background:#17243a;padding:12px 18px;border-radius:12px;z-index:10000;display:none;max-width:90%;text-align:center}.spinner{width:44px;height:44px;border:4px solid rgba(255,255,255,.15);border-top-color:#00d2ff;border-radius:50%;animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}#loading{position:fixed;inset:0;background:#050b14;display:flex;align-items:center;justify-content:center;z-index:9999}.proof{font-size:13px}
 section{padding-bottom:90px}
+
+.heroTop{display:flex;align-items:center;gap:12px}.logoOrb{width:62px;height:62px;border-radius:50%;display:grid;place-items:center;font-size:34px;font-weight:900;background:radial-gradient(circle at 35% 30%,#b66cff,#5c12ff 55%,#00cfff);box-shadow:0 0 28px rgba(139,61,255,.6)}
+.balanceCard{padding:24px;text-align:center;overflow:hidden;position:relative}.balanceLabel{font-size:13px;letter-spacing:2px;color:#aaa8d2}.balanceCard .balance{font-size:42px;color:#d58cff;text-shadow:0 0 18px rgba(180,76,255,.55);margin:8px 0}
+.quickGrid{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}.quick{padding:14px 8px;text-align:center;background:#101024;border:1px solid rgba(139,61,255,.2);border-radius:17px;color:#fff}.quick .ico{font-size:27px;display:block;margin-bottom:7px}.quick b{font-size:12px}.playBanner{display:flex;align-items:center;gap:14px;padding:17px;background:linear-gradient(110deg,#5b10ff,#9d19ff,#5a13c9);border:0}.playBanner .playIcon{margin-left:auto;width:50px;height:50px;border-radius:50%;display:grid;place-items:center;background:rgba(255,255,255,.18);font-size:22px}
+.gameHeader{display:flex;align-items:center;justify-content:space-between}.gameBoard{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin-top:14px}.gameCard{aspect-ratio:1/1;border:1px solid rgba(139,61,255,.35);border-radius:15px;background:linear-gradient(145deg,#17172b,#0d0e1e);color:transparent;font-size:28px;display:grid;place-items:center;cursor:pointer;transition:transform .15s,background .15s,box-shadow .15s}.gameCard.open,.gameCard.matched{color:#fff;background:linear-gradient(145deg,#701cff,#34106d);box-shadow:0 0 18px rgba(126,35,255,.35)}.gameCard.matched{background:linear-gradient(145deg,#1f8c75,#11473e);border-color:rgba(53,221,173,.5)}.gameMeta{display:flex;justify-content:space-between;color:#b9b3d4;font-size:13px}.gameResult{text-align:center;padding:14px;border-radius:15px;background:#111225;margin-top:12px}
+body{background:radial-gradient(circle at 50% -10%,#25105b 0,#090716 38%,#03040a 78%)}.card{background:linear-gradient(145deg,rgba(20,19,48,.96),rgba(9,10,25,.96));border-color:rgba(139,61,255,.28);box-shadow:0 0 24px rgba(111,35,255,.08)}.primary{background:linear-gradient(135deg,#7118ff,#c32dff);box-shadow:0 8px 24px rgba(128,30,255,.25)}nav{background:rgba(10,9,25,.96);border-top-color:rgba(139,61,255,.18);backdrop-filter:blur(10px)}nav button.active{color:#b946ff}
+@media(max-width:430px){.quickGrid{grid-template-columns:repeat(2,1fr)}.gameCard{font-size:24px}}
 </style>
 </head>
 <body>
 <div id="loading"><div class="spinner"></div></div><div id="toast" class="toast"></div>
 <div class="container">
 <section id="home">
-  <div class="card hero"><div class="muted">Hello,</div><h2 id="headerName">Loading...</h2><div class="balance"><span id="homeBalance">0.00</span> <span id="homeCurrency">BDT</span></div><div class="muted">Available balance</div></div>
-  <div class="card"><h3>Daily Bonus</h3><p id="bonusText" class="muted"></p><button id="bonusBtn" class="primary">Claim Daily Bonus</button></div>
+  <div class="card hero"><div class="heroTop"><div class="logoOrb">Z</div><div><div class="muted">Welcome,</div><h2 id="headerName" style="margin:3px 0">Loading...</h2><div style="color:#b946ff;font-weight:800">● Online</div></div></div></div>
+  <div class="card balanceCard"><div class="balanceLabel">YOUR BALANCE</div><div class="balance"><span id="homeBalance">0.00</span></div><div style="font-weight:800;color:#c894ff">💎 <span id="homeCurrency">BDT</span></div></div>
+  <div class="quickGrid">
+    <button class="quick" data-section="home"><span class="ico">🎁</span><b>Daily Tasks</b><div class="muted">Rewards</div></button>
+    <button class="quick" data-section="games"><span class="ico">🎮</span><b>Games</b><div class="muted">Play & Earn</div></button>
+    <button class="quick" data-section="withdraw"><span class="ico">💳</span><b>Wallet</b><div class="muted">Withdraw</div></button>
+    <button class="quick" id="inviteQuick"><span class="ico">👥</span><b>Invite Friends</b><div class="muted">Coming soon</div></button>
+  </div>
+  <div class="card playBanner"><div><h3 style="margin:0 0 4px">Play & Earn</h3><div>Complete tasks and play games.</div></div><div class="playIcon">▶</div></div>
+  <div class="card"><h3>Daily Check-in</h3><p id="bonusText" class="muted"></p><button id="bonusBtn" class="primary">Claim Daily Bonus</button></div>
   <div class="card"><h3>Earn with Ads</h3><p>Watch an optional rewarded ad to receive the displayed bonus. You never need to click the advertisement.</p><div class="row space"><span class="tag">Rewarded Ad</span><span class="muted">Today: <b id="adsToday">0</b></span></div><br><button id="adBtn" class="primary">📺 Watch Ad for Bonus</button></div>
   <div class="card"><h3>Recent Payout Proof</h3><p class="muted">Completed withdrawals are shown here as payout confirmations.</p><div id="proofList" class="proof">Loading...</div></div>
+</section>
+
+<section id="games" class="hidden">
+  <div class="card"><div class="gameHeader"><div><h2 style="margin:0">🎮 Galaxy Match</h2><p class="muted" style="margin:5px 0 0">Find all matching pairs.</p></div><span class="tag">6 Pairs</span></div>
+    <div class="gameMeta"><span>Pairs: <b id="pairsFound">0</b>/6</span><span>Moves: <b id="gameMoves">0</b></span></div>
+    <div id="gameBoard" class="gameBoard"></div>
+    <div id="gameResult" class="gameResult hidden"></div>
+    <button id="newGameBtn" class="ghost" style="width:100%;margin-top:12px">🔄 New Game</button>
+  </div>
+  <div class="card"><h3>How to play</h3><p class="muted">Tap two cards to reveal them. Match all six pairs to complete the game. This game is for entertainment and does not directly change your withdrawal balance.</p></div>
 </section>
 
 <section id="withdraw" class="hidden">
@@ -453,7 +478,7 @@ section{padding-bottom:90px}
   <div class="card"><h3>📢 Broadcast</h3><p class="muted">Send a message to registered users. Use only for legitimate app updates and notices.</p><textarea id="broadcastText" maxlength="3500" placeholder="Message..."></textarea><button id="broadcastBtn" class="primary">Send to Users</button><div id="broadcastResult" class="muted"></div></div>
 </section>
 </div>
-<nav><button data-section="home" class="active">🏠 Home</button><button data-section="withdraw">💳 Withdraw</button><button id="adminNav" data-section="admin" class="hidden">🔐 Admin</button></nav>
+<nav><button data-section="home" class="active">🏠 Home</button><button data-section="games">🎮 Games</button><button data-section="withdraw">💳 Wallet</button><button id="adminNav" data-section="admin" class="hidden">🔐 Admin</button></nav>
 
 <script>
 const tg=window.Telegram?.WebApp;let initData="",state=null,isAdmin=false,adminCache=null;
@@ -482,6 +507,12 @@ async function editBal(id){const v=prompt("New balance");if(v===null)return;try{
 $("userSearch").oninput=renderUsers;$("refreshAdmin").onclick=refreshAdmin;
 $("saveSettings").onclick=async()=>{try{const settings={appName:$("setName").value,currency:$("setCurrency").value,dailyBonusAmount:Number($("setBonus").value),adRewardAmount:Number($("setAdReward").value),dailyAdLimit:Number($("setAdLimit").value),withdrawMethods:$("setMethods").value,adsgramBlockId:$("setBlock").value,payoutProofEnabled:$("setProof").checked};const d=await api("update_settings",{settings});state.settings=d.settings;apply(state);fillSettings(d.settings);toast("Settings saved")}catch(e){toast(e.message)}};
 $("broadcastBtn").onclick=async()=>{const text=$("broadcastText").value.trim();if(!text)return toast("Write a message first");if(!confirm("Send this message to registered users?"))return;const b=$("broadcastBtn");b.disabled=true;try{const d=await api("broadcast",{text});$("broadcastResult").textContent="Sent: "+d.sent+" · Failed: "+d.failed;$("broadcastText").value="";toast("Broadcast finished")}catch(e){toast(e.message)}finally{b.disabled=false}};
+let gameCards=[],gameOpen=[],gameBusy=false,gamePairs=0,gameMoves=0;
+function initGame(){const icons=["💎","🚀","⭐","🌙","🔥","🎁"];gameCards=[...icons,...icons].sort(()=>Math.random()-.5);gameOpen=[];gamePairs=0;gameMoves=0;gameBusy=false;$("pairsFound").textContent="0";$("gameMoves").textContent="0";$("gameResult").classList.add("hidden");$("gameBoard").innerHTML=gameCards.map((x,i)=>'<button class="gameCard" data-i="'+i+'">?</button>').join("");document.querySelectorAll(".gameCard").forEach(b=>b.onclick=()=>flipCard(Number(b.dataset.i)))}
+function flipCard(i){if(gameBusy||gameOpen.includes(i)||document.querySelectorAll(".gameCard")[i].classList.contains("matched"))return;const el=document.querySelectorAll(".gameCard")[i];el.textContent=gameCards[i];el.classList.add("open");gameOpen.push(i);if(gameOpen.length<2)return;gameMoves++;$("gameMoves").textContent=String(gameMoves);const [a,b]=gameOpen;gameBusy=true;const els=document.querySelectorAll(".gameCard");if(gameCards[a]===gameCards[b]){els[a].classList.add("matched");els[b].classList.add("matched");gamePairs++;$("pairsFound").textContent=String(gamePairs);gameOpen=[];gameBusy=false;if(gamePairs===6){$("gameResult").textContent="🎉 Congratulations! You found all 6 pairs in "+gameMoves+" moves.";$("gameResult").classList.remove("hidden")}}else{setTimeout(()=>{els[a].textContent="?";els[b].textContent="?";els[a].classList.remove("open");els[b].classList.remove("open");gameOpen=[];gameBusy=false},700)}}
+$("newGameBtn").onclick=initGame;
+document.querySelectorAll(".quick[data-section]").forEach(b=>b.onclick=()=>{const target=b.dataset.section;document.querySelectorAll("nav button[data-section]").forEach(n=>n.click());if(target!=="home"){document.querySelector('nav button[data-section="'+target+'"]')?.click()}});
+initGame();
 document.querySelectorAll("nav button[data-section]").forEach(b=>b.onclick=()=>{if(b.classList.contains("hidden"))return;document.querySelectorAll("section").forEach(s=>s.classList.add("hidden"));$(b.dataset.section).classList.remove("hidden");document.querySelectorAll("nav button").forEach(x=>x.classList.remove("active"));b.classList.add("active");if(b.dataset.section==="admin")refreshAdmin()});
 (async()=>{try{if(!tg)throw new Error("Open this app from Telegram");tg.ready();tg.expand();initData=tg.initData||"";if(!initData)throw new Error("Telegram session is unavailable");await refresh()}catch(e){$("headerName").textContent=e.message;toast(e.message)}finally{$("loading").style.display="none"}})();
 </script>
