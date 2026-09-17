@@ -628,7 +628,7 @@ const HTML = `<!doctype html>
 <script src="https://sad.adsgram.ai/js/sad.min.js"></script>
 <style>
 *{box-sizing:border-box}body{margin:0;background:#050b14;color:#fff;font-family:Arial,sans-serif}.container{width:94%;max-width:720px;margin:auto;padding-top:12px}.card{background:#10192b;border:1px solid rgba(255,255,255,.08);border-radius:20px;padding:18px;margin:14px 0}.hero{padding:22px}.balance{font-size:30px;font-weight:800;color:#19c9f5}.muted{color:#9aa6b2;font-size:13px}.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}.stat{background:#0a1220;border-radius:14px;padding:13px}.stat b{font-size:19px;display:block;margin-top:5px}.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.space{justify-content:space-between}.primary,.success,.danger,.ghost{border:0;border-radius:12px;padding:12px 16px;font-weight:700;cursor:pointer}.primary{background:linear-gradient(135deg,#08c8dc,#356bdc);color:#fff}.success{background:#36c98f;color:#001018}.danger{background:#e45b68;color:#fff}.ghost{background:#18253a;color:#dbe7f3}.small{padding:8px 10px;font-size:12px}button:disabled{opacity:.5}input,select,textarea{width:100%;padding:13px;margin:6px 0;background:#050b14;color:#fff;border:1px solid rgba(255,255,255,.15);border-radius:12px;font:inherit}textarea{min-height:110px;resize:vertical}.table{overflow:auto}.item{border-bottom:1px solid rgba(255,255,255,.08);padding:12px 0}.item:last-child{border-bottom:0}.tag{display:inline-block;padding:4px 8px;border-radius:20px;background:#17253b;color:#9edfff;font-size:11px}.hidden{display:none!important}nav{position:fixed;bottom:0;left:0;right:0;height:70px;background:#10192b;border-top:1px solid rgba(255,255,255,.08);display:flex;justify-content:space-around;align-items:center;z-index:20}nav button{background:none;border:0;color:#9aa6b2;font-weight:700}nav button.active{color:#16c8ef}.toast{position:fixed;top:18px;left:50%;transform:translateX(-50%);background:#17243a;padding:12px 18px;border-radius:12px;z-index:10000;display:none;max-width:90%;text-align:center}.spinner{width:44px;height:44px;border:4px solid rgba(255,255,255,.15);border-top-color:#00d2ff;border-radius:50%;animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}#loading{position:fixed;inset:0;background:#050b14;display:flex;align-items:center;justify-content:center;z-index:9999}.proof{font-size:13px}
-section{padding-bottom:90px}
+section{padding-bottom:90px}.legalLinks{display:flex;justify-content:center;gap:18px;flex-wrap:wrap;margin:22px 0 6px;padding-bottom:6px}.legalLinks a{color:#b946ff;text-decoration:none;font-size:13px;font-weight:800}.legalLinks a:active{opacity:.75}
 
 .heroTop{display:flex;align-items:center;gap:12px}.logoOrb{width:62px;height:62px;border-radius:50%;display:grid;place-items:center;font-size:34px;font-weight:900;background:radial-gradient(circle at 35% 30%,#b66cff,#5c12ff 55%,#00cfff);box-shadow:0 0 28px rgba(139,61,255,.6)}
 .balanceCard{padding:24px;text-align:center;overflow:hidden;position:relative}.balanceLabel{font-size:13px;letter-spacing:2px;color:#aaa8d2}.balanceCard .balance{font-size:42px;color:#d58cff;text-shadow:0 0 18px rgba(180,76,255,.55);margin:8px 0}
@@ -668,6 +668,7 @@ body{background:#03040a;color:#fff;font-family:Arial,Helvetica,sans-serif}
   <button id="playEarnBanner" class="card playBanner" type="button"><div class="giftIcon">🎁</div><div class="playCopy"><h3>Play &amp; Earn</h3><div>Complete tasks and earn gems</div></div><div class="playIcon">▶</div></button>
   <div class="dailyTitle">Daily Tasks</div>
   <div class="dailyCard"><div class="dailyIcon">▣<span>✓</span></div><div class="dailyCopy"><b>Daily Check-in</b><span id="bonusText">Today: 0.10 BDT</span></div><button id="bonusBtn" class="claimBtn">Claim</button></div>
+  <div class="legalLinks"><a href="/terms" target="_blank" rel="noopener">📜 Terms of Service</a><a href="/privacy" target="_blank" rel="noopener">🔒 Privacy Policy</a></div>
 </section>
 
 <section id="games" class="hidden">
@@ -766,14 +767,70 @@ document.querySelectorAll("nav button[data-section]").forEach(b=>b.onclick=()=>{
 </body>
 </html>`;
 
-const PRIVACY_HTML = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Zelvuno Privacy Policy</title><style>body{margin:0;background:#08060d;color:#eee;font-family:Arial,sans-serif;line-height:1.65}main{max-width:760px;margin:0 auto;padding:28px 20px 50px}h1{color:#d36cff;font-size:30px}h2{color:#c58aff;margin-top:28px}p,li{color:#d9d4df}a{color:#d36cff}.card{background:#12101a;border:1px solid #2a2235;border-radius:18px;padding:22px}</style></head><body><main><div class="card"><h1>Privacy Policy</h1><p><strong>Last updated: September 17, 2026</strong></p><p>Zelvuno ("we", "our", or "the Service") respects your privacy. This Privacy Policy explains what information we collect, how we use it, and how we protect it when you use the Zelvuno Telegram Bot and Mini App.</p><h2>1. Information We Collect</h2><p>When you use Zelvuno, we may collect and store:</p><ul><li>Your Telegram user ID.</li><li>Your Telegram first name and username, when available.</li><li>Your account balance and earned rewards.</li><li>Game activity and game rewards.</li><li>Advertising-related activity, such as rewarded-ad usage.</li><li>Withdrawal requests, including the selected withdrawal method, amount, status, and related transaction information.</li><li>Basic technical and security information required to operate and protect the Service.</li></ul><h2>2. How We Use Your Information</h2><ul><li>Create and manage your Zelvuno account.</li><li>Maintain your balance and reward history.</li><li>Provide games and reward features.</li><li>Process and record withdrawal requests.</li><li>Prevent fraud, abuse, duplicate rewards, and unauthorized activity.</li><li>Maintain and improve the Service.</li><li>Provide customer support when necessary.</li></ul><h2>3. Advertising</h2><p>Zelvuno may display rewarded advertisements provided by third-party advertising services, including AdsGram. When you choose to watch a rewarded advertisement, the advertising provider may process information according to its own privacy policy and terms. We do not require you to watch advertisements to use the basic functions of Zelvuno. Advertisements may be used to provide optional additional rewards.</p><h2>4. Data Sharing</h2><p>We do not sell your personal information. We may share limited information with service providers when necessary to operate Zelvuno, including advertising providers, hosting providers, database services, and payment or withdrawal services. We may also disclose information when required by applicable law or when necessary to protect the security and integrity of the Service.</p><h2>5. Data Security</h2><p>We use reasonable technical and organizational measures to protect stored information against unauthorized access, alteration, disclosure, or destruction. However, no online service can guarantee absolute security.</p><h2>6. Data Retention</h2><p>We retain information for as long as reasonably necessary to provide the Service, maintain account and transaction records, prevent fraud and abuse, and comply with applicable legal obligations.</p><h2>7. Your Rights</h2><p>Depending on applicable law, you may have rights regarding your personal information, including requesting access, correction, or deletion of certain information. To make a privacy-related request, please contact us through the official Zelvuno support channel.</p><h2>8. Third-Party Services</h2><p>Zelvuno uses third-party services that may process information independently, including Telegram and advertising services such as AdsGram. Their processing of information is governed by their respective privacy policies and terms.</p><h2>9. Children</h2><p>Zelvuno is not intended for children who are not permitted to use Telegram or the Service under applicable laws and platform requirements.</p><h2>10. Changes to This Policy</h2><p>We may update this Privacy Policy from time to time. Any changes will be reflected by updating the "Last updated" date above.</p><h2>11. Contact</h2><p>For privacy questions or requests, please contact the Zelvuno support team through our official Telegram support channel.</p><p>By using Zelvuno, you acknowledge that you have read and understood this Privacy Policy.</p></div></main></body></html>`;
+
+
+const PRIVACY_HTML = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Zelvuno Privacy Policy</title><style>body{margin:0;background:#0d0b14;color:#eee;font-family:Arial,sans-serif;line-height:1.7}main{max-width:760px;margin:auto;padding:32px 22px 60px}h1,h2{color:#fff}h1{font-size:30px}h2{font-size:21px;margin-top:30px}.card{background:#171421;border:1px solid #2b2438;border-radius:18px;padding:24px}a{color:#b86cff}</style></head><body><main><div class="card"><h1>Privacy Policy</h1><p><b>Last updated: September 17, 2026</b></p><p>Zelvuno ("we", "our", or "the Service") respects your privacy. This Privacy Policy explains what information we collect, how we use it, and how we protect it when you use the Zelvuno Telegram Bot and Mini App.</p><h2>1. Information We Collect</h2><p>We may collect and store your Telegram user ID, first name and username when available, account balance and earned rewards, game activity and game rewards, advertising-related activity, withdrawal requests, and basic technical and security information required to operate and protect the Service.</p><h2>2. How We Use Your Information</h2><p>We use this information to create and manage your account, maintain balances and reward history, provide games and rewards, process withdrawal requests, prevent fraud and abuse, maintain and improve the Service, and provide support.</p><h2>3. Advertising</h2><p>Zelvuno may display rewarded advertisements provided by third-party advertising services, including AdsGram. When you choose to watch a rewarded advertisement, the advertising provider may process information according to its own privacy policy and terms. Basic functions of Zelvuno are not dependent on watching an advertisement; ads may provide optional additional rewards.</p><h2>4. Data Sharing</h2><p>We do not sell your personal information. Limited information may be shared with service providers when necessary to operate Zelvuno, including advertising, hosting, database, and withdrawal-related services. Information may also be disclosed when required by applicable law or necessary to protect the Service.</p><h2>5. Data Security</h2><p>We use reasonable technical and organizational measures to protect stored information. However, no online service can guarantee absolute security.</p><h2>6. Data Retention</h2><p>We retain information for as long as reasonably necessary to provide the Service, maintain account and transaction records, prevent fraud and abuse, and comply with legal obligations.</p><h2>7. Your Rights</h2><p>Depending on applicable law, you may have rights regarding your personal information, including requesting access, correction, or deletion of certain information. Contact the Zelvuno support team through the official Telegram support channel for privacy requests.</p><h2>8. Third-Party Services</h2><p>Zelvuno uses third-party services, including Telegram and advertising services such as AdsGram. Their processing of information is governed by their respective policies and terms.</p><h2>9. Children</h2><p>Zelvuno is not intended for children who are not permitted to use Telegram or the Service under applicable laws and platform requirements.</p><h2>10. Changes</h2><p>We may update this Privacy Policy from time to time. Changes will be reflected by updating the date above.</p><h2>11. Contact</h2><p>For privacy questions or requests, please contact the Zelvuno support team through our official Telegram support channel.</p></div></main></body></html>`;
+
+const TERMS_HTML = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Zelvuno Terms of Service</title><style>body{margin:0;background:#0d0b14;color:#eee;font-family:Arial,sans-serif;line-height:1.7}main{max-width:760px;margin:auto;padding:32px 22px 60px}h1,h2{color:#fff}h1{font-size:30px}h2{font-size:21px;margin-top:30px}.card{background:#171421;border:1px solid #2b2438;border-radius:18px;padding:24px}a{color:#b86cff}</style></head><body><main><div class="card"><h1>Terms of Service</h1><p><b>Last updated: September 17, 2026</b></p><p>By using Zelvuno, you agree to these Terms of Service and the <a href="/privacy">Privacy Policy</a>.</p><h2>1. About Zelvuno</h2><p>Zelvuno is a Telegram Mini App that provides games, optional rewarded advertisements, points, bonuses, and withdrawal request features.</p><h2>2. Eligibility</h2><p>You must be legally permitted to use Telegram and the Service in your country or region. You are responsible for complying with applicable laws and regulations.</p><h2>3. Account and Security</h2><p>Your Telegram account is used to access Zelvuno. Do not attempt to create multiple accounts, impersonate another user, exploit bugs, manipulate rewards, or interfere with the Service.</p><h2>4. Games and Rewards</h2><p>Rewards are determined by the settings and rules displayed in Zelvuno. Basic game functionality is available without watching an advertisement. Optional rewarded advertisements may provide additional bonuses. A rewarded bonus is provided only after the required conditions are completed.</p><h2>5. Advertisements</h2><p>Rewarded advertisements are provided by third-party advertising services such as AdsGram. You choose whether to watch an optional rewarded advertisement. You must not attempt to manipulate, automate, or fraudulently interact with advertisements.</p><h2>6. Withdrawals</h2><p>Withdrawal requests are subject to the minimum amounts, payment methods, verification requirements, availability, and other rules displayed in Zelvuno. A withdrawal request is not a guarantee of immediate payment. Requests may be reviewed for fraud, abuse, or compliance before processing.</p><h2>7. Prohibited Activity</h2><p>You may not use Zelvuno for fraud, abuse, automated manipulation, multiple-account abuse, unauthorized access, reward exploitation, or any activity that violates applicable law or third-party platform rules.</p><h2>8. Changes and Availability</h2><p>We may modify, suspend, or discontinue features, rewards, limits, payment methods, or other parts of the Service when reasonably necessary. We may update these Terms from time to time.</p><h2>9. Disclaimer</h2><p>Zelvuno is provided on an as-available basis. We do not guarantee uninterrupted availability, a particular reward amount, or a particular withdrawal processing time.</p><h2>10. Contact</h2><p>For questions about these Terms, contact the Zelvuno support team through the official Telegram support channel.</p></div></main></body></html>`;
+
+async function handleTelegramWebhook(request, env) {
+  if (request.method !== "POST") return json({ ok: true });
+  let update = {};
+  try { update = await request.json(); } catch { return json({ ok: false, message: "Invalid update" }, 400); }
+  const msg = update?.message;
+  if (!msg?.chat?.id) return json({ ok: true });
+  const text = String(msg.text || "").trim();
+  if (!/^\/(start|terms|privacy)(?:@\w+)?(?:\s|$)/i.test(text)) return json({ ok: true });
+
+  const base = new URL(request.url).origin;
+  const termsUrl = base + "/terms";
+  const privacyUrl = base + "/privacy";
+  const appUrl = base + "/";
+  let body;
+
+  if (/^\/terms(?:@\w+)?$/i.test(text)) {
+    body = {
+      chat_id: msg.chat.id,
+      text: "📜 Zelvuno Terms of Service",
+      reply_markup: { inline_keyboard: [[{ text: "📜 Open Terms of Service", url: termsUrl }]] }
+    };
+  } else if (/^\/privacy(?:@\w+)?$/i.test(text)) {
+    body = {
+      chat_id: msg.chat.id,
+      text: "🔒 Zelvuno Privacy Policy",
+      reply_markup: { inline_keyboard: [[{ text: "🔒 Open Privacy Policy", url: privacyUrl }]] }
+    };
+  } else {
+    body = {
+      chat_id: msg.chat.id,
+      text: "Welcome to Zelvuno!\n\nPlay games, earn points, and request withdrawals.\n\nPlease review our Terms of Service and Privacy Policy before using the Service.",
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "🚀 Open Zelvuno", web_app: { url: appUrl } }],
+          [{ text: "📜 Terms of Service", url: termsUrl }, { text: "🔒 Privacy Policy", url: privacyUrl }]
+        ]
+      }
+    };
+  }
+
+  try {
+    const r = await fetch("https://api.telegram.org/bot" + env.BOT_TOKEN + "/sendMessage", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body)
+    });
+    return json({ ok: r.ok });
+  } catch {
+    return json({ ok: false }, 500);
+  }
+}
 
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    if (url.pathname === "/privacy") {
-      return new Response(PRIVACY_HTML, {headers: {"content-type":"text/html; charset=utf-8","cache-control":"public, max-age=3600"}});
-    }
+    if (url.pathname === "/telegram") return handleTelegramWebhook(request, env);
+    if (url.pathname === "/privacy") return new Response(PRIVACY_HTML, {headers:{"content-type":"text/html; charset=utf-8","cache-control":"public, max-age=3600"}});
+    if (url.pathname === "/terms") return new Response(TERMS_HTML, {headers:{"content-type":"text/html; charset=utf-8","cache-control":"public, max-age=3600"}});
     if (url.pathname === "/api") return handleApi(request, env);
     if (url.pathname === "/adsgram/reward") {
       const userid = url.searchParams.get("userid") || "";
